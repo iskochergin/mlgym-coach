@@ -1,1 +1,1 @@
-"""agent/ — baseline (ReAct) + scaffold, owner: менеджер."""
+"""agent/ — baseline (ReAct) + scaffold, owner: Ваня."""

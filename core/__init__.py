@@ -1,1 +1,1 @@
-"""core/ — общие контракты (dataclasses), owner: менеджер."""
+"""core/ — общие контракты (dataclasses), owner: Ваня."""
