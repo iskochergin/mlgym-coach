@@ -82,16 +82,25 @@
 ```
 mlgym-coach/
   core/        # КОНТРАКТЫ: Task, Action, Observation, Stage, Hint, Step, EpisodeResult
+               #   types.py — FROZEN; меняется только через синк
   env/         # [owner: Ваня] gym-петля, парсер действий, песочница, токен-бюджет
+               #   gym.py · executor.py (v1 stub) · dummy_coach.py · run_slice.py (демо)
   agent/       # [owner: Ваня] baseline (ReAct) + scaffold (tree-search)
+               #   scripted.py — агент-заглушка без LLM, для тестов петли
   coach/       # [owner: Егор] чек-лист, детекторы, подсказки L1–L3, грейдер, метрики
   dashboard/   # [owner: Амели] streamlit-вьюер прогонов поверх EpisodeResult.json
   tasks/       # [owner: Софа] датасеты + спеки задач (train + спрятанный test + метрика)
   runner/      # [owner: Софа] харнесс экспериментов (фиксирует LLM+датасет, N сидов)
   reports/     # [owner: Софа] агрегированные результаты, таблицы baseline vs scaffold
+
+  examples/    # эталонные EpisodeResult-фикстуры (episode_baseline.json, episode_scaffold.json)
+               #   + make_examples.py — генератор через core.types. Input для Амели/Софы.
+  runs/        # артефакты прогонов (slice_demo.json и т.п.). В .gitignore, не коммитим.
 ```
 
 Единственная общая зона редактирования — `core/`. Замораживается на старте, меняется только через быстрый синк.
+
+Сейчас в репо лежит **тонкий сквозной слайс**: `env/` + `agent/scripted.py` крутят петлю end-to-end на заглушках (`executor.py` возвращает фейковые скоры, `dummy_coach.py` молчит). Запуск демо: `python env/run_slice.py` — пишет результат в `runs/slice_demo.json`. Формат гарантированно совпадает с контрактом `core/types.py`.
 
 ---
 
