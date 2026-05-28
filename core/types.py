@@ -22,7 +22,6 @@ from typing import Any, Optional
 
 class Stage(str, Enum):
     """FROZEN. Не менять значения — на них завязаны Coach и Env."""
-    UNDERSTAND = "understand"
     EDA = "eda"
     BASELINE = "baseline"
     IMPROVE = "improve"
