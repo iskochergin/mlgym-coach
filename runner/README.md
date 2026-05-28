@@ -14,6 +14,12 @@ python3 -m runner.aggregate \
   --output reports/fake_smoke_summary
 ```
 
+Run the end-to-end smoke check in a temporary directory:
+
+```bash
+python3 -m runner.smoke_check
+```
+
 The runner currently supports `env: fake`. Replacing it with the real
-environment should happen in `runner.run._run_one` or via a small env factory;
-the aggregator only depends on the frozen `EpisodeResult` JSON format.
+environment should happen in `runner.env_factory.build_env`; the aggregator only
+depends on the frozen `EpisodeResult` JSON format.
