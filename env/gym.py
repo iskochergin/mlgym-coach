@@ -48,7 +48,7 @@ class Env:
         self.agent_name = agent_name
 
         self._history: list[Step] = []
-        self._stage: Stage = Stage.UNDERSTAND
+        self._stage: Stage = Stage.EDA  # стартовая стадия (UNDERSTAND убрали в Stage 5→4)
         self._tokens_left: int = token_budget
         self._last_val_score: Optional[float] = None
         self._last_result: Optional[str] = None
@@ -60,7 +60,7 @@ class Env:
         if task is not None:
             self.task = task
         self._history = []
-        self._stage = Stage.UNDERSTAND
+        self._stage = Stage.EDA
         self._tokens_left = self.token_budget
         self._last_val_score = None
         self._last_result = None
@@ -142,7 +142,7 @@ class Env:
 
     def _next_stage(self, current: Stage, action_type: ActionType) -> Stage:
         if action_type == ActionType.PLAN:
-            return Stage.UNDERSTAND if current == Stage.UNDERSTAND else current
+            return current  # PLAN не двигает стадию (раньше вёл в UNDERSTAND)
         if action_type == ActionType.EDA:
             return Stage.EDA
         if action_type == ActionType.CODE:
