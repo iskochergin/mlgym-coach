@@ -28,7 +28,6 @@ REPORTS_DIR = _REPO_ROOT / "reports"
 TASKS_DIR = _REPO_ROOT / "tasks"
 
 STAGES_ORDER = [
-    Stage.UNDERSTAND,
     Stage.EDA,
     Stage.BASELINE,
     Stage.IMPROVE,
@@ -36,7 +35,6 @@ STAGES_ORDER = [
 ]
 
 STAGE_LABELS = {
-    Stage.UNDERSTAND: "Understand",
     Stage.EDA: "EDA",
     Stage.BASELINE: "Baseline",
     Stage.IMPROVE: "Improve",
@@ -177,9 +175,9 @@ def render_cards(metrics: list[tuple[str, str, str]]) -> None:
 
 def render_progress_stepper(steps: list) -> None:
     visited = {s.stage for s in steps}
-    current = steps[-1].stage if steps else Stage.UNDERSTAND
+    current = steps[-1].stage if steps else Stage.EDA
 
-    cols = st.columns(5)
+    cols = st.columns(4)
     for idx, stage in enumerate(STAGES_ORDER):
         if stage not in visited:
             status, color, icon = "Locked", "#9ca3af", "-"

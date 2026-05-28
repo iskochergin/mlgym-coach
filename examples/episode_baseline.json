@@ -5,7 +5,7 @@
   "steps": [
     {
       "idx": 0,
-      "stage": "understand",
+      "stage": "eda",
       "action": {
         "type": "plan",
         "content": "Бинарная классификация churn_small, метрика roc_auc. План: быстро обучить logreg как бейзлайн, потом попробовать бустинг."

@@ -30,6 +30,7 @@ from core.types import (
 EXAMPLES_DIR = Path(__file__).resolve().parent
 BASELINE_PATH = EXAMPLES_DIR / "episode_baseline.json"
 SCAFFOLD_PATH = EXAMPLES_DIR / "episode_scaffold.json"
+SCAFFOLD_SEED1_PATH = EXAMPLES_DIR / "episode_scaffold_seed1.json"
 
 TASK_ID = "churn_small"
 
@@ -39,7 +40,7 @@ def build_baseline() -> EpisodeResult:
     steps: list[Step] = [
         Step(
             idx=0,
-            stage=Stage.UNDERSTAND,
+            stage=Stage.EDA,
             action=Action(
                 type=ActionType.PLAN,
                 content=(
@@ -129,7 +130,7 @@ def build_scaffold() -> EpisodeResult:
     steps: list[Step] = [
         Step(
             idx=0,
-            stage=Stage.UNDERSTAND,
+            stage=Stage.EDA,
             action=Action(
                 type=ActionType.PLAN,
                 content=(
@@ -142,7 +143,7 @@ def build_scaffold() -> EpisodeResult:
             tokens_used=260,
             hints=[
                 Hint(
-                    stage=Stage.UNDERSTAND,
+                    stage=Stage.EDA,
                     item_id="val_split",
                     level=1,
                     text=(
@@ -298,6 +299,121 @@ def build_scaffold() -> EpisodeResult:
     )
 
 
+def build_scaffold_seed1() -> EpisodeResult:
+    """Второй scaffold-прогон на другом сиде для режима сравнения."""
+    steps: list[Step] = [
+        Step(
+            idx=0,
+            stage=Stage.EDA,
+            action=Action(
+                type=ActionType.PLAN,
+                content=(
+                    "Задача churn_small, метрика roc_auc. Сначала фиксирую split и "
+                    "проверяю базовые риски утечек, затем baseline и цикл улучшений."
+                ),
+            ),
+            result="plan noted",
+            tokens_used=240,
+            hints=[
+                Hint(
+                    stage=Stage.EDA,
+                    item_id="val_split",
+                    level=1,
+                    text="Как будешь держать одинаковую валидацию между запусками?",
+                ),
+            ],
+        ),
+        Step(
+            idx=1,
+            stage=Stage.EDA,
+            action=Action(
+                type=ActionType.EDA,
+                content="df.isna().mean(); df['churn'].value_counts(normalize=True); df.describe(include='all')",
+            ),
+            result="missing: income 3.0%, city 0.2%; class balance 27/73",
+            tokens_used=430,
+        ),
+        Step(
+            idx=2,
+            stage=Stage.BASELINE,
+            action=Action(
+                type=ActionType.CODE,
+                content=(
+                    "from sklearn.linear_model import LogisticRegression\n"
+                    "from sklearn.model_selection import StratifiedKFold\n"
+                    "# ohe + logreg baseline\n"
+                ),
+            ),
+            result="code written (22 lines)",
+            tokens_used=520,
+        ),
+        Step(
+            idx=3,
+            stage=Stage.BASELINE,
+            action=Action(type=ActionType.RUN, content="run current code"),
+            result="val roc_auc=0.802 ± 0.011",
+            val_score=0.802,
+            tokens_used=105,
+        ),
+        Step(
+            idx=4,
+            stage=Stage.IMPROVE,
+            action=Action(
+                type=ActionType.CODE,
+                content=(
+                    "income_log = np.log1p(income)\n"
+                    "# target encoding для high-cardinality категориальных признаков внутри CV\n"
+                ),
+            ),
+            result="code written (31 lines)",
+            tokens_used=610,
+            hints=[
+                Hint(
+                    stage=Stage.IMPROVE,
+                    item_id="feature_shift",
+                    level=2,
+                    text="Ты проверил, какие признаки реально дают прирост после кодирования?",
+                ),
+            ],
+        ),
+        Step(
+            idx=5,
+            stage=Stage.IMPROVE,
+            action=Action(type=ActionType.RUN, content="run current code"),
+            result="val roc_auc=0.844 ± 0.008",
+            val_score=0.844,
+            tokens_used=115,
+        ),
+        Step(
+            idx=6,
+            stage=Stage.SUBMIT,
+            action=Action(
+                type=ActionType.SUBMIT,
+                content="proba = best_model.predict_proba(X_test)[:, 1]; submit(proba)",
+            ),
+            result="submission accepted, test roc_auc=0.839",
+            tokens_used=220,
+        ),
+    ]
+
+    return EpisodeResult(
+        task_id=TASK_ID,
+        agent="scaffold",
+        seed=1,
+        steps=steps,
+        final_test_score=0.839,
+        checklist_coverage=0.79,
+        total_tokens=sum(s.tokens_used for s in steps),
+        config={
+            "model": "claude-opus-4-7",
+            "agent_kind": "react+coach",
+            "max_steps": 14,
+            "budget_tokens": 7000,
+            "hint_policy": "stage-scoped-escalation",
+        },
+    )
+
+
 def _summary(ep: EpisodeResult) -> str:
     return (
         f"agent={ep.agent!r:>11}  steps={len(ep.steps):>2}  "
@@ -308,21 +424,26 @@ def _summary(ep: EpisodeResult) -> str:
 def main() -> None:
     baseline = build_baseline()
     scaffold = build_scaffold()
+    scaffold_seed1 = build_scaffold_seed1()
 
     BASELINE_PATH.write_text(baseline.to_json(), encoding="utf-8")
     SCAFFOLD_PATH.write_text(scaffold.to_json(), encoding="utf-8")
+    SCAFFOLD_SEED1_PATH.write_text(scaffold_seed1.to_json(), encoding="utf-8")
 
     print(f"wrote {BASELINE_PATH.relative_to(_REPO_ROOT)}")
     print(f"wrote {SCAFFOLD_PATH.relative_to(_REPO_ROOT)}")
+    print(f"wrote {SCAFFOLD_SEED1_PATH.relative_to(_REPO_ROOT)}")
 
     # Round-trip: читаем обратно через from_json и печатаем сводку.
     baseline_back = EpisodeResult.from_json(BASELINE_PATH.read_text(encoding="utf-8"))
     scaffold_back = EpisodeResult.from_json(SCAFFOLD_PATH.read_text(encoding="utf-8"))
+    scaffold_seed1_back = EpisodeResult.from_json(SCAFFOLD_SEED1_PATH.read_text(encoding="utf-8"))
 
     print()
     print("re-parsed via EpisodeResult.from_json():")
     print(f"  {_summary(baseline_back)}")
     print(f"  {_summary(scaffold_back)}")
+    print(f"  {_summary(scaffold_seed1_back)}")
 
 
 if __name__ == "__main__":

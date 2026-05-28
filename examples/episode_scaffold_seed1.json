@@ -5,17 +5,17 @@
   "steps": [
     {
       "idx": 0,
-      "stage": "understand",
+      "stage": "eda",
       "action": {
         "type": "plan",
-        "content": "Задача churn_small, метрика roc_auc. Сначала фиксирую split и базовую проверку утечек, затем EDA, baseline, улучшения и submit."
+        "content": "Задача churn_small, метрика roc_auc. Сначала фиксирую split и проверяю базовые риски утечек, затем baseline и цикл улучшений."
       },
       "result": "plan noted",
       "val_score": null,
       "tokens_used": 240,
       "hints": [
         {
-          "stage": "understand",
+          "stage": "eda",
           "item_id": "val_split",
           "level": 1,
           "text": "Как будешь держать одинаковую валидацию между запусками?"
