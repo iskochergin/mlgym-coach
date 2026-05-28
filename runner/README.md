@@ -6,6 +6,12 @@ Run the current fake-env smoke experiment:
 python3 -m runner.run --config runner/configs/fake_smoke.yaml
 ```
 
+Run through the current `env.gym.Env` adapter:
+
+```bash
+python3 -m runner.run --config runner/configs/real_smoke.yaml
+```
+
 Aggregate saved `EpisodeResult` files into `reports/`:
 
 ```bash
@@ -20,6 +26,7 @@ Run the end-to-end smoke check in a temporary directory:
 python3 -m runner.smoke_check
 ```
 
-The runner currently supports `env: fake`. Replacing it with the real
-environment should happen in `runner.env_factory.build_env`; the aggregator only
-depends on the frozen `EpisodeResult` JSON format.
+The runner supports `env: real` through `runner.real_env.RealGymRunnerEnv` and
+keeps `env: fake` for deterministic runner tests. When the full production env
+is ready, update the real adapter while keeping the `EpisodeResult` JSON format
+unchanged; the aggregator only depends on that frozen contract.
