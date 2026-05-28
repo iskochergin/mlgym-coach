@@ -1,0 +1,11 @@
+id: diabetes_rmse
+description: >
+  Regression on the sklearn diabetes dataset. Predict the numeric disease
+  progression target for the held-out rows. Metric: RMSE, lower is better. The
+  train file contains features and target; the test features file contains
+  features only.
+metric: rmse
+metric_higher_better: false
+train_path: tasks/data/diabetes_rmse/train.csv
+test_features_path: tasks/data/diabetes_rmse/test_features.csv
+hidden_labels_path: tasks/hidden_labels/diabetes_rmse/y_test.csv

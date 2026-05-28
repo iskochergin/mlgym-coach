@@ -33,6 +33,8 @@ htmlcov/
 
 # Data artefacts
 data/
+!tasks/data/
+!tasks/data/**
 *.parquet
 *.pkl
 *.joblib

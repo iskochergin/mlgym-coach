@@ -1,0 +1,11 @@
+id: breast_cancer_roc_auc
+description: >
+  Binary classification on the sklearn breast cancer dataset. Predict the
+  positive-class probability for the held-out rows. Metric: ROC AUC, higher is
+  better. The train file contains features and target; the test features file
+  contains features only.
+metric: roc_auc
+metric_higher_better: true
+train_path: tasks/data/breast_cancer_roc_auc/train.csv
+test_features_path: tasks/data/breast_cancer_roc_auc/test_features.csv
+hidden_labels_path: tasks/hidden_labels/breast_cancer_roc_auc/y_test.csv
