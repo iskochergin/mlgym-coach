@@ -1,7 +1,8 @@
-"""Демо-слайс end-to-end: Env + DummyCoach + ScriptedAgent.
+"""Демо-слайс end-to-end: Env + DummyCoach + BaselineAgent (MockLLM).
 
-Замыкает петлю прогона на заглушках, чтобы убедиться, что интерфейсы
-core.types ↔ env ↔ agent состыкованы и EpisodeResult пишется/читается.
+Замыкает петлю прогона на настоящем executor'е, но без реального LLM-ключа
+(MockLLM) и без траты токенов — чтобы проверить стыковку
+core.types ↔ env ↔ agent и что EpisodeResult пишется/читается.
 
 Запуск из корня репозитория:
     python env/run_slice.py
@@ -10,6 +11,7 @@ core.types ↔ env ↔ agent состыкованы и EpisodeResult пишет�
 """
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 
@@ -17,8 +19,11 @@ _REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
-from agent.scripted import ScriptedAgent
-from core.types import Action, ActionType, EpisodeResult, Task
+# Гоним без реального ключа — детерминированные mock-ответы агента.
+os.environ.setdefault("MLGYM_LLM", "mock")
+
+from agent.baseline import BaselineAgent
+from core.types import ActionType, EpisodeResult, Task
 from env.dummy_coach import DummyCoach
 from env.executor import reset_executor
 from env.gym import Env
@@ -29,46 +34,23 @@ OUTPUT_PATH = RUNS_DIR / "slice_demo.json"
 
 def _build_task() -> Task:
     return Task(
-        id="churn_small",
-        description="Бинарная классификация churn_small. Метрика roc_auc.",
+        id="breast_cancer_roc_auc",
+        description="Бинарная классификация breast cancer. Метрика roc_auc, выше лучше.",
         metric="roc_auc",
         metric_higher_better=True,
-        train_path="data/churn_small/train.csv",
-        test_features_path="data/churn_small/test_features.csv",
+        train_path=str(_REPO_ROOT / "tasks/data/breast_cancer_roc_auc/train.csv"),
+        test_features_path=str(_REPO_ROOT / "tasks/data/breast_cancer_roc_auc/test_features.csv"),
     )
-
-
-def _scripted_actions() -> list[Action]:
-    return [
-        Action(
-            type=ActionType.PLAN,
-            content="binary classification churn_small; baseline a tree, then improve, then submit",
-        ),
-        Action(
-            type=ActionType.CODE,
-            content="model = GradientBoostingClassifier(random_state=0).fit(X, y)",
-        ),
-        Action(type=ActionType.RUN, content="run current code"),
-        Action(
-            type=ActionType.CODE,
-            content="model = LGBMClassifier(n_estimators=500, learning_rate=0.05).fit(X, y)",
-        ),
-        Action(type=ActionType.RUN, content="run current code"),
-        Action(
-            type=ActionType.SUBMIT,
-            content="proba = model.predict_proba(X_test)[:, 1]; submit(proba)",
-        ),
-    ]
 
 
 def main() -> None:
     reset_executor()
     task = _build_task()
     env = Env(task=task, coach=DummyCoach(), agent_name="baseline", seed=0)
-    agent = ScriptedAgent(actions=_scripted_actions())
+    agent = BaselineAgent()
 
     obs = env.reset()
-    while True:
+    for _ in range(12):
         action = agent.act(obs)
         obs = env.step(action)
         if action.type == ActionType.SUBMIT:
@@ -85,12 +67,14 @@ def main() -> None:
     back = EpisodeResult.from_json(OUTPUT_PATH.read_text(encoding="utf-8"))
     print()
     print("summary (re-parsed via EpisodeResult.from_json):")
-    print(f"  agent           = {back.agent!r}")
-    print(f"  steps           = {len(back.steps)}")
+    print(f"  agent            = {back.agent!r}")
+    print(f"  steps            = {len(back.steps)}")
     print(f"  final_test_score = {back.final_test_score}")
-    print(f"  total_tokens    = {back.total_tokens}")
-    print(f"  stages          = {[s.stage.value for s in back.steps]}")
-    print(f"  val_scores      = {[s.val_score for s in back.steps]}")
+    print(f"  total_tokens     = {back.total_tokens}")
+    print(f"  stages           = {[s.stage.value for s in back.steps]}")
+    print(f"  actions          = {[s.action.type.value for s in back.steps]}")
+    print(f"  val_scores       = {[s.val_score for s in back.steps]}")
+    print(f"  last_result      = {back.steps[-1].result!r}")
 
 
 if __name__ == "__main__":
