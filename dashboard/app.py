@@ -633,45 +633,6 @@ def page_compare(episodes_with_meta: list[dict]) -> None:
     st.dataframe(pd.DataFrame(agg_rows), use_container_width=True, hide_index=True)
 
 
-def apply_theme(dark_mode: bool) -> None:
-    """Светлая тема — базовая (см. .streamlit/config.toml), её не трогаем.
-
-    Для тёмного режима перекрашиваем фон, текст, ПОДПИСИ виджетов и поля ввода
-    целиком — иначе светлые лейблы базовой темы становятся нечитаемыми на тёмном
-    фоне (и наоборот). Это и был баг: фон красился, а лейблы — нет."""
-    if not dark_mode:
-        return
-
-    bg = "#0b1220"
-    text = "#e5e7eb"
-    panel = "#111827"
-    field_bg = "#1f2937"
-    border = "#374151"
-    st.markdown(
-        f"""
-        <style>
-        .stApp {{ background: {bg}; color: {text}; }}
-        section[data-testid="stSidebar"] {{ background: {panel}; }}
-        /* Заголовки, абзацы и ПОДПИСИ всех виджетов */
-        .stApp h1, .stApp h2, .stApp h3, .stApp h4, .stApp p, .stApp span,
-        .stApp label, .stApp [data-testid="stWidgetLabel"] p,
-        .stApp [data-testid="stMarkdownContainer"] {{ color: {text}; }}
-        /* Поля ввода: text/number/textarea/select */
-        .stApp [data-baseweb="input"] input,
-        .stApp [data-baseweb="textarea"] textarea,
-        .stApp [data-baseweb="select"] div {{
-            color: {text}; background: {field_bg};
-        }}
-        .stApp [data-baseweb="input"], .stApp [data-baseweb="textarea"],
-        .stApp [data-baseweb="select"] > div {{
-            background: {field_bg}; border-color: {border};
-        }}
-        </style>
-        """,
-        unsafe_allow_html=True,
-    )
-
-
 def main() -> None:
     episodes_with_meta = load_episodes_with_meta()
     df = episodes_dataframe(episodes_with_meta) if episodes_with_meta else pd.DataFrame()
@@ -679,7 +640,6 @@ def main() -> None:
 
     with st.sidebar:
         st.title("mlgym-coach")
-        dark_mode = st.toggle("Dark theme", value=False)
         page = st.radio(
             "Навигация",
             [
@@ -693,8 +653,6 @@ def main() -> None:
             ],
         )
         st.caption(f"Loaded runs: {len(episodes_with_meta)}")
-
-    apply_theme(dark_mode)
 
     if page == "New task":
         page_product_flow()
