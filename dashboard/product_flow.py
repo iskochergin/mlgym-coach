@@ -17,6 +17,7 @@ from dashboard.backend_client import (
     run_status,
     submit_run,
 )
+from dashboard.pricing import DEFAULT_MODEL, dollars_to_tokens, tokens_to_dollars
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 RUNS_DIR = _REPO_ROOT / "runs"
@@ -138,10 +139,56 @@ def render_live_timeline(episode: EpisodeResult) -> None:
                 )
 
 
+def _render_run_controls() -> tuple[int, str, int]:
+    """Агент, число сидов и бюджет (токены ИЛИ $) с живым пересчётом.
+
+    Рендерится вне st.form. Возвращает (token_budget:int, agent:str, seeds:int).
+    На бэкенд/раннер уходит ровно целочисленный token_budget — конвертация
+    только на UI, протокол не меняем."""
+    st.markdown("**Параметры запуска**")
+
+    prefill = st.session_state.get("prefill_agent")
+    agent_index = 1 if prefill == "scaffold" else 0
+    cA, cB = st.columns(2)
+    agent = cA.selectbox("Агент", ["baseline", "scaffold"], index=agent_index, key="run_agent")
+    seeds = int(cB.number_input("Число сидов", min_value=1, max_value=20, value=1, key="run_seeds"))
+
+    mode = st.radio(
+        "Единица бюджета",
+        ["Бюджет в токенах", "Бюджет в $"],
+        horizontal=True,
+        key="budget_mode",
+    )
+    if mode == "Бюджет в $":
+        dollars = st.number_input("Бюджет, $", min_value=0.10, value=1.00, step=0.10, key="budget_dollars")
+        token_budget = dollars_to_tokens(dollars, DEFAULT_MODEL)
+        st.caption(f"≈ {token_budget:,} токенов (по {DEFAULT_MODEL})")
+    else:
+        token_budget = int(
+            st.number_input(
+                "Токен-бюджет", min_value=500, max_value=100_000, value=8000, step=500, key="budget_tokens"
+            )
+        )
+        st.caption(f"≈ ${tokens_to_dollars(token_budget, DEFAULT_MODEL):.2f} (по {DEFAULT_MODEL})")
+
+    # Сводка на весь эксперимент. Эта форма запускает одного агента → множитель 1
+    # (если появится мультивыбор baseline+scaffold, поставить agents_count=2).
+    agents_count = 1
+    total = tokens_to_dollars(token_budget * seeds * agents_count, DEFAULT_MODEL)
+    agents_note = f" × {agents_count} агент(ов)" if agents_count > 1 else ""
+    st.caption(f"За эксперимент: {seeds} сидов × {token_budget:,} токенов{agents_note} ≈ ${total:.2f}")
+
+    return token_budget, agent, seeds
+
+
 def _render_create_form() -> None:
     st.subheader("1. Новая задача")
     backend = api_base_url() or "local fallback"
     st.caption(f"Бэкенд: {backend}")
+
+    # Параметры запуска и бюджет — ВНЕ st.form: виджеты внутри формы не делают
+    # rerun до сабмита, а нам нужен живой пересчёт бюджета токены⇄$.
+    token_budget, agent, seeds = _render_run_controls()
 
     with st.form("new_task_form", clear_on_submit=False):
         description = st.text_area(
@@ -158,13 +205,6 @@ def _render_create_form() -> None:
         col3, col4 = st.columns(2)
         test_features_csv = col3.file_uploader("test_features.csv (обязательно)", type=["csv"])
         hidden_labels_csv = col4.file_uploader("hidden_labels.csv (опционально)", type=["csv"])
-
-        c1, c2, c3 = st.columns(3)
-        token_budget = c1.number_input("Токен-бюджет", min_value=500, max_value=100_000, value=8000, step=500)
-        prefill = st.session_state.get("prefill_agent")
-        agent_index = 1 if prefill == "scaffold" else 0
-        agent = c2.selectbox("Агент", ["baseline", "scaffold"], index=agent_index)
-        seeds = c3.number_input("Число сидов", min_value=1, max_value=20, value=1)
 
         llm_mode = st.selectbox("Режим LLM", ["mock", "real"], index=0)
 
