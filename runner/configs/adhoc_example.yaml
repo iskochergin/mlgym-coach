@@ -1,0 +1,12 @@
+experiment_name: adhoc_example
+model: fake-model
+env: fake
+agents:
+  - baseline
+  - scaffold
+num_seeds: 3
+task_ids:
+  - replace_with_uploaded_task_id
+token_budget: 4000
+max_steps: 6
+output_dir: runs

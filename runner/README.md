@@ -12,6 +12,27 @@ Run through the current `env.gym.Env` adapter:
 python3 -m runner.run --config runner/configs/real_smoke.yaml
 ```
 
+Register an uploaded task from UI/backend code:
+
+```python
+from runner.api import create_task, run_uploaded_task
+
+created = create_task(
+    description="Binary churn classification",
+    metric="roc_auc",
+    train_path="/path/to/train.csv",
+    test_features_path="/path/to/test_features.csv",
+    hidden_labels_path="/path/to/y_test.csv",
+)
+run_uploaded_task(task_id=created.task_id, num_seeds=3)
+```
+
+The upload API stores `train.csv`, `test_features.csv`, and optional
+`sample.csv` under `tasks/uploads/<task_id>/`. Hidden labels are stored only at
+`tasks/hidden_labels/<task_id>/y_test.csv`, matching the grader/env convention.
+Ad-hoc runner configs can use `task_ids` plus `num_seeds` instead of pre-baked
+task spec paths; see `runner/configs/adhoc_example.yaml`.
+
 Aggregate saved `EpisodeResult` files into `reports/`:
 
 ```bash
