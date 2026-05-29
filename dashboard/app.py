@@ -25,6 +25,7 @@ if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
 from core.types import EpisodeResult, Stage  # noqa: E402
+from dashboard.product_flow import page_product_flow  # noqa: E402
 
 EXAMPLES_DIR = _REPO_ROOT / "examples"
 REPORTS_DIR = _REPO_ROOT / "reports"
@@ -657,13 +658,23 @@ def main() -> None:
         dark_mode = st.toggle("Dark theme", value=False)
         page = st.radio(
             "Навигация",
-            ["Overview", "Tasks", "Run experiment", "Runs list", "Run details", "Compare"],
+            [
+                "New task",
+                "Overview",
+                "Tasks",
+                "Run experiment",
+                "Runs list",
+                "Run details",
+                "Compare",
+            ],
         )
         st.caption(f"Loaded runs: {len(episodes_with_meta)}")
 
     apply_theme(dark_mode)
 
-    if page == "Overview":
+    if page == "New task":
+        page_product_flow()
+    elif page == "Overview":
         page_overview(df)
     elif page == "Tasks":
         page_tasks(tasks, df)
