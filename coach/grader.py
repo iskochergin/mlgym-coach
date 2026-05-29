@@ -9,6 +9,47 @@ from sklearn.metrics import (
 )
 from core.types import Task
 
+def _load_single_column(path: str, expected_names: list) -> pd.Series:
+    """
+    Вспомогательная функция для надежной загрузки одной колонки из CSV.
+    1. Пробуем прочитать с заголовком.
+    2. Если есть одна из expected_names, используем её.
+    3. Если колонок всего одна, используем её (это покрывает 'prediction' и др.).
+    4. Если ничего не подошло или данных мало, пробуем без заголовка.
+    """
+    df = pd.read_csv(path)
+    
+    # Ищем по приоритетным именам
+    for name in expected_names:
+        if name in df.columns:
+            return df[name]
+            
+    # Если ровно одна колонка — используем её независимо от имени
+    if len(df.columns) == 1:
+        # Проверяем, не является ли заголовок данными.
+        # Если в файле нет заголовка, pandas считает первую строку данных заголовком.
+        # Если при этом данных было больше 1 строки, то первая строка попала в заголовок,
+        # и её тип (в df.columns[0]) будет совпадать с типом данных в колонке.
+        # Если заголовок — это строка '0', '1' и т.д., а данные тоже числа — скорее всего это данные.
+        
+        column_name = str(df.columns[0])
+        try:
+            # Если имя колонки — это число (инт или флоат), то это скорее всего данные
+            float(column_name)
+            is_numeric_header = True
+        except ValueError:
+            is_numeric_header = False
+
+        if is_numeric_header or len(df) == 0:
+             df_no_header = pd.read_csv(path, header=None)
+             return df_no_header.iloc[:, 0]
+             
+        return df.iloc[:, 0]
+        
+    # Если не нашли и колонок много/ноль, пробуем без заголовка
+    df_no_header = pd.read_csv(path, header=None)
+    return df_no_header.iloc[:, 0]
+
 def score_submission(task: Task, predictions_path: str, hidden_labels_path: str) -> float:
     """
     Вычисляет метрику для предсказаний агента.
@@ -25,27 +66,8 @@ def score_submission(task: Task, predictions_path: str, hidden_labels_path: str)
         ValueError: Если данные некорректны (разная длина, NaN и т.д.)
     """
     # Шаг 1 — загрузка данных
-    # Сначала пытаемся прочитать с заголовком
-    y_test_df = pd.read_csv(hidden_labels_path)
-    preds_df = pd.read_csv(predictions_path)
-    
-    # Извлекаем y_test
-    if "target" in y_test_df.columns:
-        y_test = y_test_df["target"]
-    else:
-        # Если 'target' не найден, предполагаем, что файла без заголовка и перечитываем
-        y_test_df = pd.read_csv(hidden_labels_path, header=None)
-        y_test = y_test_df.iloc[:, 0]
-
-    # Извлекаем predictions
-    if "pred" in preds_df.columns:
-        preds = preds_df["pred"]
-    elif "target" in preds_df.columns:
-        preds = preds_df["target"]
-    else:
-        # Если ни 'pred', ни 'target' не найдены, перечитываем без заголовка
-        preds_df = pd.read_csv(predictions_path, header=None)
-        preds = preds_df.iloc[:, 0]
+    y_test = _load_single_column(hidden_labels_path, ["target"])
+    preds = _load_single_column(predictions_path, ["pred", "target"])
         
     # Проверка на NaN
     if preds.isna().any():
