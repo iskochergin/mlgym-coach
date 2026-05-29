@@ -7,6 +7,10 @@
 """
 from __future__ import annotations
 
+import os
+import sys
+import tempfile
+from pathlib import Path
 from typing import Optional, Protocol
 
 from core.types import (
@@ -21,6 +25,17 @@ from core.types import (
 )
 from env.dummy_coach import DummyCoach
 from env.executor import run_solution
+
+_REPO_ROOT = Path(__file__).resolve().parent.parent
+
+
+def _default_hidden_labels(task: Task) -> Optional[str]:
+    """Путь к скрытым лейблам по соглашению Софы (tasks/hidden_labels/<id>/y_test.csv).
+
+    Task (заморожен) поля hidden_labels_path не содержит, поэтому выводим путь
+    из task.id. Если файла нет — None (грейдер просто пропускается)."""
+    candidate = _REPO_ROOT / "tasks" / "hidden_labels" / task.id / "y_test.csv"
+    return str(candidate) if candidate.exists() else None
 
 
 class _CoachLike(Protocol):
@@ -40,12 +55,17 @@ class Env:
         token_budget: int = 50_000,
         seed: int = 0,
         agent_name: str = "baseline",
+        hidden_labels_path: Optional[str] = None,
     ) -> None:
         self.task = task
         self.coach: _CoachLike = coach if coach is not None else DummyCoach()
         self.token_budget = token_budget
         self.seed = seed
         self.agent_name = agent_name
+        # Путь к y_test для грейдера. Если явно не задан — выводим по соглашению.
+        self.hidden_labels_path: Optional[str] = (
+            hidden_labels_path if hidden_labels_path is not None else _default_hidden_labels(task)
+        )
 
         self._history: list[Step] = []
         self._stage: Stage = Stage.EDA  # стартовая стадия (UNDERSTAND убрали в Stage 5→4)
@@ -166,12 +186,7 @@ class Env:
                 return "нет кода для запуска: сначала пришли действие CODE", None
             return run_solution(self._current_code, self.task, mode="run")
         if action.type == ActionType.SUBMIT:
-            code = self._current_code or action.content
-            result, test_score = run_solution(code, self.task, mode="submit")
-            self._final_test_score = test_score
-            # Step.val_score держим только для валидации — у SUBMIT-шага оставляем None,
-            # а test-скор живёт в EpisodeResult.final_test_score.
-            return result, None
+            return self._execute_submit(self._current_code or action.content)
         if action.type == ActionType.CODE:
             self._current_code = action.content
             lines = action.content.count("\n") + 1
@@ -181,3 +196,50 @@ class Env:
         if action.type == ActionType.EDA:
             return "eda noted", None
         return "", None
+
+    def _execute_submit(self, code: str) -> tuple[str, Optional[float]]:
+        """Песочница пишет predictions.csv → грейдер считает test-метрику по y_test.
+
+        Грейдер живёт в coach/ — импортируем лениво, чтобы env не тащил эту
+        зависимость на верхнем уровне. Любой сбой грейдера логируем в stderr и
+        оставляем final_test_score = None, эпизод не валим.
+        Возвращаем test_score как score шага (виден в Step.val_score) и кладём
+        его же в self._final_test_score (→ EpisodeResult.final_test_score)."""
+        fd, preds_path = tempfile.mkstemp(prefix="mlgym_pred_", suffix=".csv")
+        os.close(fd)
+        try:
+            result, _ = run_solution(
+                code, self.task, mode="submit", predictions_out=preds_path
+            )
+
+            if not os.path.exists(preds_path) or os.path.getsize(preds_path) == 0:
+                # Песочница не записала предсказания (ошибка/таймаут) — без грейдинга.
+                self._final_test_score = None
+                return result, None
+
+            if not self.hidden_labels_path:
+                print(
+                    f"[env.gym] grader пропущен: нет hidden_labels для task {self.task.id!r}",
+                    file=sys.stderr,
+                )
+                self._final_test_score = None
+                return result, None
+
+            try:
+                from coach.grader import score_submission
+
+                test_score = float(
+                    score_submission(self.task, preds_path, self.hidden_labels_path)
+                )
+            except Exception as e:  # грейдер не должен ронять эпизод
+                print(f"[env.gym] grader упал: {e!r}", file=sys.stderr)
+                self._final_test_score = None
+                return result, None
+
+            self._final_test_score = test_score
+            return f"{result}; test {self.task.metric}={test_score:.4f}", test_score
+        finally:
+            try:
+                os.remove(preds_path)
+            except OSError:
+                pass

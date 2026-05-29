@@ -69,7 +69,15 @@ def _parse_val_score(stdout: str) -> Optional[float]:
         return None
 
 
-def run_solution(code: str, task, mode: str = "run") -> tuple[str, Optional[float]]:
+def run_solution(
+    code: str,
+    task,
+    mode: str = "run",
+    predictions_out: Optional[str] = None,
+) -> tuple[str, Optional[float]]:
+    """Исполнить код. В submit-режиме, если задан predictions_out, копируем туда
+    predictions.csv (рабочая директория удаляется в finally — путь должен
+    пережить очистку, чтобы grader мог посчитать метрику)."""
     if mode == "stub":
         return _run_stub("run", task)
 
@@ -122,6 +130,12 @@ def run_solution(code: str, task, mode: str = "run") -> tuple[str, Optional[floa
             if not preds.exists():
                 return "executor: submit-режим, но predictions.csv не создан", None
             n = sum(1 for _ in preds.open(encoding="utf-8")) - 1
+            # Сохраняем predictions.csv за пределы temp-папки для grader'а.
+            if predictions_out is not None:
+                try:
+                    shutil.copyfile(preds, predictions_out)
+                except OSError as e:
+                    return f"executor: не удалось сохранить predictions.csv ({e})", None
             # Test-скор считает grader (есть доступ к y_test), не executor.
             return f"submission accepted: predictions.csv ({max(n, 0)} строк)", None
 

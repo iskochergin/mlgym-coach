@@ -108,7 +108,7 @@ if os.environ.get("PREDICT") == "1":
         preds = model.predict_proba(X_test)[:, 1]
     else:
         preds = model.predict(X_test)
-    pd.DataFrame({"prediction": preds}).to_csv("predictions.csv", index=False)
+    pd.DataFrame({"pred": preds}).to_csv("predictions.csv", index=False)
 '''
 
 # Заготовленная последовательность ходов ReAct-агента. Последний ответ
