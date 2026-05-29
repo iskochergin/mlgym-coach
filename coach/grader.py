@@ -25,23 +25,26 @@ def score_submission(task: Task, predictions_path: str, hidden_labels_path: str)
         ValueError: Если данные некорректны (разная длина, NaN и т.д.)
     """
     # Шаг 1 — загрузка данных
+    # Сначала пытаемся прочитать с заголовком
     y_test_df = pd.read_csv(hidden_labels_path)
     preds_df = pd.read_csv(predictions_path)
     
-    # Извлечение y_test
-    # Ожидается: либо один столбец, либо column `target`
+    # Извлекаем y_test
     if "target" in y_test_df.columns:
         y_test = y_test_df["target"]
     else:
+        # Если 'target' не найден, предполагаем, что файла без заголовка и перечитываем
+        y_test_df = pd.read_csv(hidden_labels_path, header=None)
         y_test = y_test_df.iloc[:, 0]
-        
-    # Извлечение predictions
-    # Ожидается: либо `pred`, либо `target`, либо первый столбец
+
+    # Извлекаем predictions
     if "pred" in preds_df.columns:
         preds = preds_df["pred"]
     elif "target" in preds_df.columns:
         preds = preds_df["target"]
     else:
+        # Если ни 'pred', ни 'target' не найдены, перечитываем без заголовка
+        preds_df = pd.read_csv(predictions_path, header=None)
         preds = preds_df.iloc[:, 0]
         
     # Проверка на NaN
