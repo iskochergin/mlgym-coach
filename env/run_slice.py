@@ -42,14 +42,20 @@ def _build_task() -> Task:
     )
 
 
-def run_episode(coach: str) -> EpisodeResult:
+def run_episode(coach: str, *, token_budget: int = 50_000) -> EpisodeResult:
     reset_executor()
     task = _build_task()
+    run_dir = RUNS_DIR / f"slice_{coach}"
+    # Явный hidden_labels_path (приоритетнее соглашения) — для ad-hoc задач из UI.
+    hidden_labels = _REPO_ROOT / "tasks/hidden_labels/breast_cancer_roc_auc/y_test.csv"
     env = Env(
         task=task,
         coach=resolve_coach(coach),
         agent_name="baseline",
         seed=0,
+        token_budget=token_budget,
+        hidden_labels_path=str(hidden_labels),
+        run_dir=str(run_dir),
     )
     agent = BaselineAgent()
 
@@ -65,20 +71,21 @@ def run_episode(coach: str) -> EpisodeResult:
 
 
 def _summary(coach: str, result: EpisodeResult) -> None:
-    RUNS_DIR.mkdir(parents=True, exist_ok=True)
-    out = RUNS_DIR / f"slice_demo_{coach}.json"
-    out.write_text(result.to_json(), encoding="utf-8")
-
-    back = EpisodeResult.from_json(out.read_text(encoding="utf-8"))
-    total_hints = sum(len(s.hints) for s in back.steps)
-    print(f"===== coach={coach!r} → wrote {out.relative_to(_REPO_ROOT)} =====")
-    print(f"  steps            = {len(back.steps)}")
-    print(f"  coverage         = {back.checklist_coverage}")
+    run_dir = RUNS_DIR / f"slice_{coach}"
+    total_hints = sum(len(s.hints) for s in result.steps)
+    partial = run_dir / "episode.partial.json"
+    final = run_dir / "episode.json"
+    print(f"===== coach={coach!r} → {run_dir.relative_to(_REPO_ROOT)}/ =====")
+    print(f"  episode.json exists      = {final.exists()}")
+    print(f"  episode.partial removed  = {not partial.exists()}")
+    print(f"  steps            = {len(result.steps)}")
+    print(f"  coverage         = {result.checklist_coverage}")
     print(f"  total hints      = {total_hints}")
-    print(f"  final_test_score = {back.final_test_score}")
-    print(f"  actions          = {[s.action.type.value for s in back.steps]}")
-    print(f"  val_scores       = {[s.val_score for s in back.steps]}")
-    print(f"  last_result      = {back.steps[-1].result!r}")
+    print(f"  total_tokens     = {result.total_tokens}")
+    print(f"  final_test_score = {result.final_test_score}")
+    print(f"  actions          = {[s.action.type.value for s in result.steps]}")
+    print(f"  val_scores       = {[s.val_score for s in result.steps]}")
+    print(f"  last_result      = {result.steps[-1].result!r}")
     print()
 
 
