@@ -40,6 +40,7 @@ def run_experiment(config: dict[str, Any]) -> list[Path]:
         token_budget=int(config.get("token_budget", 4000)),
         max_steps=int(config.get("max_steps", 6)),
         env_name=env_name,
+        coach=str(config.get("coach", "dummy")),
     )
 
     written: list[Path] = []

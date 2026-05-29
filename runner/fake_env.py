@@ -14,6 +14,7 @@ class FakeEnvConfig:
     token_budget: int
     max_steps: int
     env_name: str = "fake"
+    coach: str = "dummy"  # "dummy" (baseline) | "real" (scaffold); используется только real-env
 
 
 class FakeEnv:
