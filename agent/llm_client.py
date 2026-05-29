@@ -1,69 +1,81 @@
-"""Model-neutral, OpenAI-совместимый LLM-клиент + MockLLM для офлайн-прогона.
+"""LLM-клиент для агента: реальный OpenAI (через openai SDK) + MockLLM-фолбэк.
 
-Реальный режим: говорит с любым OpenAI-совместимым chat/completions эндпоинтом
-(base_url + api_key + model из конфига/окружения).
+Конфиг строго через окружение / .env (см. SECRETS.md), секреты в репо не попадают:
+  OPENAI_API_KEY   — ключ (плейсхолдер sk-REPLACE-ME трактуется как «ключа нет»)
+  OPENAI_BASE_URL  — базовый URL (для прокси / OpenAI-совместимых эндпоинтов)
+  OPENAI_MODEL     — модель (дефолт gpt-5-mini)
+  MLGYM_LLM        — mock | openai
 
-Mock-режим (MLGYM_LLM=mock или нет ключа): возвращает заранее заготовленные
-ответы в нашем тегированном формате (см. env/parser.py), чтобы BaselineAgent
-крутился end-to-end без реального ключа и без траты токенов.
+Выбор клиента (build_client):
+  MLGYM_LLM=mock, либо ключа нет, либо ключ == sk-REPLACE-ME → MockLLM
+  иначе → реальный OpenAIClient (если openai SDK не установлен — фолбэк на MockLLM).
+MockLLM возвращает детерминированные ответы в тегированном формате (env/parser.py),
+чтобы BaselineAgent крутился end-to-end без сети и трат токенов.
 """
 from __future__ import annotations
 
-import json
 import os
-import urllib.request
+import sys
 from dataclasses import dataclass
 from typing import Optional
+
+from dotenv import load_dotenv
+
+# Подхватываем .env из корня репо (поиск вверх по дереву от CWD).
+load_dotenv()
+
+_PLACEHOLDER_KEY = "sk-REPLACE-ME"
+_DEFAULT_MODEL = "gpt-5-mini"
+_DEFAULT_BASE_URL = "https://api.openai.com/v1"
+
+# Чтобы лог выбора клиента печатался один раз за процесс.
+_startup_logged = False
 
 
 @dataclass
 class LLMConfig:
-    model: str = "gpt-4o-mini"
-    base_url: str = "https://api.openai.com/v1"
+    model: str = _DEFAULT_MODEL
+    base_url: Optional[str] = None
     api_key: Optional[str] = None
     timeout: float = 60.0
 
     @staticmethod
     def from_env() -> "LLMConfig":
+        base = os.environ.get("OPENAI_BASE_URL")
         return LLMConfig(
-            model=os.environ.get("OPENAI_MODEL", "gpt-4o-mini"),
-            base_url=os.environ.get("OPENAI_BASE_URL", "https://api.openai.com/v1").rstrip("/"),
+            model=os.environ.get("OPENAI_MODEL") or _DEFAULT_MODEL,
+            base_url=base.rstrip("/") if base else None,
             api_key=os.environ.get("OPENAI_API_KEY"),
         )
 
 
 def use_mock() -> bool:
-    """Mock включён явно (MLGYM_LLM=mock) или когда нет API-ключа."""
+    """MockLLM если: MLGYM_LLM=mock, либо ключа нет, либо ключ-плейсхолдер."""
     if os.environ.get("MLGYM_LLM", "").lower() == "mock":
         return True
-    return not os.environ.get("OPENAI_API_KEY")
+    api_key = os.environ.get("OPENAI_API_KEY")
+    return (not api_key) or api_key == _PLACEHOLDER_KEY
 
 
-class LLMClient:
-    """Тонкая обёртка над chat/completions. Без сторонних SDK — голый urllib."""
+class OpenAIClient:
+    """Реальный клиент через openai SDK. Сохраняет сигнатуру complete()."""
 
     def __init__(self, config: Optional[LLMConfig] = None) -> None:
         self.config = config or LLMConfig.from_env()
+        from openai import OpenAI  # ленивый импорт: нет SDK → ImportError ловит build_client
+
+        kwargs: dict = {"api_key": self.config.api_key, "timeout": self.config.timeout}
+        if self.config.base_url:
+            kwargs["base_url"] = self.config.base_url
+        self._client = OpenAI(**kwargs)
 
     def complete(self, messages: list[dict], max_tokens: int = 800) -> str:
-        payload = {
-            "model": self.config.model,
-            "messages": messages,
-            "max_tokens": max_tokens,
-            "temperature": 0.2,
-        }
-        req = urllib.request.Request(
-            f"{self.config.base_url}/chat/completions",
-            data=json.dumps(payload).encode("utf-8"),
-            headers={
-                "Content-Type": "application/json",
-                "Authorization": f"Bearer {self.config.api_key}",
-            },
-            method="POST",
+        resp = self._client.chat.completions.create(
+            model=self.config.model,
+            messages=messages,
+            max_tokens=max_tokens,
         )
-        with urllib.request.urlopen(req, timeout=self.config.timeout) as resp:
-            data = json.loads(resp.read().decode("utf-8"))
-        return data["choices"][0]["message"]["content"]
+        return resp.choices[0].message.content or ""
 
 
 # ─────────────────────────── Mock ───────────────────────────
@@ -135,8 +147,28 @@ class MockLLM:
         return self._script[idx]
 
 
+def _log_once(message: str) -> None:
+    global _startup_logged
+    if not _startup_logged:
+        print(f"[llm_client] {message}", file=sys.stderr)
+        _startup_logged = True
+
+
 def build_client(config: Optional[LLMConfig] = None):
-    """Фабрика: MockLLM в офлайн-режиме, иначе настоящий LLMClient."""
+    """Фабрика клиента. Никогда не логирует ключ.
+
+    MockLLM, если включён mock / нет ключа / ключ-плейсхолдер, либо если openai
+    SDK не установлен (тогда фолбэк с предупреждением в stderr)."""
     if use_mock():
+        _log_once(f"клиент=MockLLM (MLGYM_LLM={os.environ.get('MLGYM_LLM', '')!r}, ключ не задан/плейсхолдер)")
         return MockLLM()
-    return LLMClient(config)
+
+    cfg = config or LLMConfig.from_env()
+    try:
+        client = OpenAIClient(cfg)
+    except Exception as e:  # напр. openai SDK не установлен
+        _log_once(f"openai SDK недоступен ({e!r}); фолбэк на MockLLM")
+        return MockLLM()
+
+    _log_once(f"клиент=OpenAI, модель={cfg.model}, base_url={cfg.base_url or _DEFAULT_BASE_URL}")
+    return client
