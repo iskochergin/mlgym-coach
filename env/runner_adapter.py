@@ -11,6 +11,7 @@ runner/env_factory.build_env ожидает объект с методом .run(
 from __future__ import annotations
 
 import sys
+from typing import Optional
 
 from agent.baseline import BaselineAgent
 from core.types import ActionType, EpisodeResult, Task
@@ -61,6 +62,9 @@ class RealEnv:
         config,
         coach="dummy",
         agent_obj=None,
+        token_budget: Optional[int] = None,
+        hidden_labels_path: Optional[str] = None,
+        run_dir: Optional[str] = None,
     ) -> None:
         self.task = task
         self.agent = agent
@@ -70,7 +74,12 @@ class RealEnv:
         self._coach = resolve_coach(coach)
         self._agent = agent_obj if agent_obj is not None else BaselineAgent()
         self._max_steps = int(getattr(config, "max_steps", 12))
-        self._token_budget = int(getattr(config, "token_budget", 50_000))
+        # Явный token_budget важнее значения из config (дефолт — из config / 50k).
+        self._token_budget = int(
+            token_budget if token_budget is not None else getattr(config, "token_budget", 50_000)
+        )
+        self._hidden_labels_path = hidden_labels_path
+        self._run_dir = run_dir
 
     def run(self) -> EpisodeResult:
         reset_executor()
@@ -80,6 +89,8 @@ class RealEnv:
             token_budget=self._token_budget,
             seed=self.seed,
             agent_name=self.agent,
+            hidden_labels_path=self._hidden_labels_path,
+            run_dir=self._run_dir,
         )
         obs = env.reset()
         for _ in range(self._max_steps):
@@ -93,9 +104,29 @@ class RealEnv:
 
 
 def build_real_env(
-    *, task: Task, agent: str, seed: int, config, coach: str = "dummy"
+    *,
+    task: Task,
+    agent: str,
+    seed: int,
+    config,
+    coach: str = "dummy",
+    token_budget: Optional[int] = None,
+    hidden_labels_path: Optional[str] = None,
+    run_dir: Optional[str] = None,
 ) -> RealEnv:
     """Фабрика для runner/env_factory (ветка env_name == 'real').
 
-    coach: "dummy" (по умолчанию) | "real" | готовый объект-коуч."""
-    return RealEnv(task=task, agent=agent, seed=seed, config=config, coach=coach)
+    coach: "dummy" (по умолчанию) | "real" | готовый объект-коуч.
+    token_budget: явный бюджет (важнее значения из config).
+    hidden_labels_path: явный путь к y_test (важнее соглашения по task.id).
+    run_dir: куда писать снапшоты эпизода (partial + финальный)."""
+    return RealEnv(
+        task=task,
+        agent=agent,
+        seed=seed,
+        config=config,
+        coach=coach,
+        token_budget=token_budget,
+        hidden_labels_path=hidden_labels_path,
+        run_dir=run_dir,
+    )
