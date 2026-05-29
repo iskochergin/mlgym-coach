@@ -47,8 +47,16 @@ def run_experiment(config: dict[str, Any]) -> list[Path]:
     for loaded_task in loaded_tasks:
         for agent in agents:
             for seed in seeds:
-                result = _run_one(loaded_task, agent, seed, env_name, fake_config)
-                path = output_root / loaded_task.task.id / agent / f"seed_{seed}.json"
+                run_dir = _episode_run_dir(output_root, loaded_task, agent, seed)
+                result = _run_one(
+                    loaded_task,
+                    agent,
+                    seed,
+                    env_name,
+                    fake_config,
+                    run_dir,
+                )
+                path = run_dir / "episode.json"
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_text(result.to_json(), encoding="utf-8")
                 written.append(path)
@@ -61,6 +69,7 @@ def _run_one(
     seed: int,
     env_name: str,
     config: FakeEnvConfig,
+    run_dir: Path,
 ) -> EpisodeResult:
     env = build_env(
         env_name=env_name,
@@ -68,8 +77,19 @@ def _run_one(
         agent=agent,
         seed=seed,
         config=config,
+        hidden_labels_path=str(loaded_task.hidden_labels_path),
+        run_dir=str(run_dir),
     )
     return env.run()
+
+
+def _episode_run_dir(
+    output_root: Path,
+    loaded_task: LoadedTask,
+    agent: str,
+    seed: int,
+) -> Path:
+    return output_root / loaded_task.task.id / f"seed{seed}" / agent
 
 
 def _load_config(path: Path) -> dict[str, Any]:

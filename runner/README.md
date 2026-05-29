@@ -50,3 +50,8 @@ python3 -m runner.smoke_check
 The runner supports `env: real` through `env.runner_adapter.build_real_env` and
 keeps `env: fake` for deterministic runner tests. Keep the `EpisodeResult` JSON
 format unchanged; the aggregator only depends on that frozen contract.
+
+Each episode gets its own live directory:
+`runs/<experiment_name>/<task_id>/seed<N>/<agent>/episode.json`. The real env
+writes `episode.partial.json` there during execution and atomically replaces it
+with the final `episode.json` at the end.
