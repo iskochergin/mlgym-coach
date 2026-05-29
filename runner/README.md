@@ -26,7 +26,6 @@ Run the end-to-end smoke check in a temporary directory:
 python3 -m runner.smoke_check
 ```
 
-The runner supports `env: real` through `runner.real_env.RealGymRunnerEnv` and
-keeps `env: fake` for deterministic runner tests. When the full production env
-is ready, update the real adapter while keeping the `EpisodeResult` JSON format
-unchanged; the aggregator only depends on that frozen contract.
+The runner supports `env: real` through `env.runner_adapter.build_real_env` and
+keeps `env: fake` for deterministic runner tests. Keep the `EpisodeResult` JSON
+format unchanged; the aggregator only depends on that frozen contract.
