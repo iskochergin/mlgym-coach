@@ -1,0 +1,37 @@
+# VCS
+.git
+.gitignore
+
+# Локальные окружения (venv пересобирается внутри образа)
+.venv
+venv
+
+# Python-кэш
+__pycache__/
+**/__pycache__/
+*.py[cod]
+*.egg-info/
+
+# Артефакты прогонов (монтируются как volume)
+runs/
+outputs/
+*.log
+
+# СЕКРЕТЫ: ключ НЕ должен попасть в слои образа.
+# В рантайм он приходит через docker-compose env_file, а не COPY.
+.env
+.env.*
+
+# Docker-файлы и доки не нужны внутри образа
+.dockerignore
+Dockerfile
+docker-compose.yml
+
+# Кэши инструментов / ОС
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

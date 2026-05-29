@@ -1,0 +1,20 @@
+# Один сервис: дашборд + раннер/агент в одном контейнере.
+# Запуск:  docker compose up --build   →  http://localhost:8501
+services:
+  app:
+    build: .
+    image: mlgym-coach
+    ports:
+      - "8501:8501"
+    # Ключ OpenAI и режим LLM берутся из локального .env (в гит не коммитится).
+    env_file:
+      - .env
+    volumes:
+      # Результаты прогонов и загруженные задачи переживают пересборку образа.
+      - ./runs:/app/runs
+      - ./tasks/uploads:/app/tasks/uploads
+      # Загрузка задач через UI пишет спеку и скрытые лейблы сюда (runner/api.py) —
+      # монтируем, чтобы ad-hoc задачи не пропадали при пересборке контейнера.
+      - ./tasks/hidden_labels:/app/tasks/hidden_labels
+      - ./tasks/specs:/app/tasks/specs
+    restart: unless-stopped
