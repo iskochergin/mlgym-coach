@@ -4,3 +4,5 @@ numpy
 pyyaml
 streamlit
 plotly
+python-dotenv
+openai
