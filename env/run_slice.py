@@ -24,12 +24,11 @@ os.environ.setdefault("MLGYM_LLM", "mock")
 
 from agent.baseline import BaselineAgent
 from core.types import ActionType, EpisodeResult, Task
-from env.dummy_coach import DummyCoach
 from env.executor import reset_executor
 from env.gym import Env
+from env.runner_adapter import resolve_coach
 
 RUNS_DIR = _REPO_ROOT / "runs"
-OUTPUT_PATH = RUNS_DIR / "slice_demo.json"
 
 
 def _build_task() -> Task:
@@ -43,10 +42,15 @@ def _build_task() -> Task:
     )
 
 
-def main() -> None:
+def run_episode(coach: str) -> EpisodeResult:
     reset_executor()
     task = _build_task()
-    env = Env(task=task, coach=DummyCoach(), agent_name="baseline", seed=0)
+    env = Env(
+        task=task,
+        coach=resolve_coach(coach),
+        agent_name="baseline",
+        seed=0,
+    )
     agent = BaselineAgent()
 
     obs = env.reset()
@@ -57,24 +61,32 @@ def main() -> None:
             break
         if obs.tokens_left <= 0:
             break
+    return env.result()
 
-    result = env.result()
+
+def _summary(coach: str, result: EpisodeResult) -> None:
     RUNS_DIR.mkdir(parents=True, exist_ok=True)
-    OUTPUT_PATH.write_text(result.to_json(), encoding="utf-8")
-    print(f"wrote {OUTPUT_PATH.relative_to(_REPO_ROOT)}")
+    out = RUNS_DIR / f"slice_demo_{coach}.json"
+    out.write_text(result.to_json(), encoding="utf-8")
 
-    # Round-trip + сводка.
-    back = EpisodeResult.from_json(OUTPUT_PATH.read_text(encoding="utf-8"))
-    print()
-    print("summary (re-parsed via EpisodeResult.from_json):")
-    print(f"  agent            = {back.agent!r}")
+    back = EpisodeResult.from_json(out.read_text(encoding="utf-8"))
+    total_hints = sum(len(s.hints) for s in back.steps)
+    print(f"===== coach={coach!r} → wrote {out.relative_to(_REPO_ROOT)} =====")
     print(f"  steps            = {len(back.steps)}")
+    print(f"  coverage         = {back.checklist_coverage}")
+    print(f"  total hints      = {total_hints}")
     print(f"  final_test_score = {back.final_test_score}")
-    print(f"  total_tokens     = {back.total_tokens}")
-    print(f"  stages           = {[s.stage.value for s in back.steps]}")
     print(f"  actions          = {[s.action.type.value for s in back.steps]}")
     print(f"  val_scores       = {[s.val_score for s in back.steps]}")
     print(f"  last_result      = {back.steps[-1].result!r}")
+    print()
+
+
+def main() -> None:
+    # Прогон 1: дефолт (молчаливый коуч-заглушка) — hints не появляются.
+    _summary("dummy", run_episode("dummy"))
+    # Прогон 2: настоящий Coach — должны появиться hints, а грейдер посчитать test-метрику.
+    _summary("real", run_episode("real"))
 
 
 if __name__ == "__main__":

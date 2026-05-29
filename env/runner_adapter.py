@@ -10,12 +10,43 @@ runner/env_factory.build_env ожидает объект с методом .run(
 """
 from __future__ import annotations
 
-from typing import Optional
+import sys
 
 from agent.baseline import BaselineAgent
 from core.types import ActionType, EpisodeResult, Task
 from env.executor import reset_executor
 from env.gym import Env
+
+
+def resolve_coach(coach):
+    """Привести спецификацию коуча к объекту с .assess(obs) -> (coverage, hints).
+
+    Принимает:
+      - None / "dummy"  → DummyCoach() (молчаливый коуч-заглушка);
+      - "real"          → coach.coach.Coach() (ленивый импорт; env не тащит
+                          зависимость от coach/ на верхнем уровне);
+      - готовый объект  → возвращается как есть.
+    Если настоящий коуч недоступен (coach/ ещё нет, ошибка импорта и т.п.) —
+    fallback на DummyCoach с предупреждением в stderr, без падения."""
+    if coach is None or coach == "dummy":
+        from env.dummy_coach import DummyCoach
+
+        return DummyCoach()
+    if coach == "real":
+        try:
+            from coach.coach import Coach
+
+            return Coach()
+        except Exception as e:
+            print(
+                f"[runner_adapter] настоящий Coach недоступен ({e!r}); fallback на DummyCoach",
+                file=sys.stderr,
+            )
+            from env.dummy_coach import DummyCoach
+
+            return DummyCoach()
+    # Уже готовый объект-коуч.
+    return coach
 
 
 class RealEnv:
@@ -28,14 +59,15 @@ class RealEnv:
         agent: str,
         seed: int,
         config,
-        coach=None,
+        coach="dummy",
         agent_obj=None,
     ) -> None:
         self.task = task
         self.agent = agent
         self.seed = seed
         self.config = config
-        self._coach = coach
+        # coach: "dummy" | "real" | готовый объект-коуч.
+        self._coach = resolve_coach(coach)
         self._agent = agent_obj if agent_obj is not None else BaselineAgent()
         self._max_steps = int(getattr(config, "max_steps", 12))
         self._token_budget = int(getattr(config, "token_budget", 50_000))
@@ -60,6 +92,10 @@ class RealEnv:
         return env.result()
 
 
-def build_real_env(*, task: Task, agent: str, seed: int, config) -> RealEnv:
-    """Фабрика для runner/env_factory (ветка env_name == 'real')."""
-    return RealEnv(task=task, agent=agent, seed=seed, config=config)
+def build_real_env(
+    *, task: Task, agent: str, seed: int, config, coach: str = "dummy"
+) -> RealEnv:
+    """Фабрика для runner/env_factory (ветка env_name == 'real').
+
+    coach: "dummy" (по умолчанию) | "real" | готовый объект-коуч."""
+    return RealEnv(task=task, agent=agent, seed=seed, config=config, coach=coach)
