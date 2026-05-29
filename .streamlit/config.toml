@@ -1,0 +1,10 @@
+# Базовая тема Streamlit. Раньше база уезжала в «тёмную» (тёмные поля + бледные
+# подписи), а кастомный CSS красил фон в белый — отсюда нечитаемые лейблы.
+# Закрепляем светлую базу с явными цветами; тёмный режим включается тоглом в
+# сайдбаре (dashboard/app.py: apply_theme), который перекрашивает текст и поля.
+[theme]
+base = "light"
+primaryColor = "#ef4444"
+backgroundColor = "#ffffff"
+secondaryBackgroundColor = "#f8fafc"
+textColor = "#111827"

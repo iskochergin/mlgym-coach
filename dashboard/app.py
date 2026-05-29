@@ -634,14 +634,38 @@ def page_compare(episodes_with_meta: list[dict]) -> None:
 
 
 def apply_theme(dark_mode: bool) -> None:
-    bg = "#0b1220" if dark_mode else "#ffffff"
-    text = "#e5e7eb" if dark_mode else "#111827"
-    panel = "#111827" if dark_mode else "#f8fafc"
+    """Светлая тема — базовая (см. .streamlit/config.toml), её не трогаем.
+
+    Для тёмного режима перекрашиваем фон, текст, ПОДПИСИ виджетов и поля ввода
+    целиком — иначе светлые лейблы базовой темы становятся нечитаемыми на тёмном
+    фоне (и наоборот). Это и был баг: фон красился, а лейблы — нет."""
+    if not dark_mode:
+        return
+
+    bg = "#0b1220"
+    text = "#e5e7eb"
+    panel = "#111827"
+    field_bg = "#1f2937"
+    border = "#374151"
     st.markdown(
         f"""
         <style>
         .stApp {{ background: {bg}; color: {text}; }}
-        div[data-testid="stSidebar"] {{ background: {panel}; }}
+        section[data-testid="stSidebar"] {{ background: {panel}; }}
+        /* Заголовки, абзацы и ПОДПИСИ всех виджетов */
+        .stApp h1, .stApp h2, .stApp h3, .stApp h4, .stApp p, .stApp span,
+        .stApp label, .stApp [data-testid="stWidgetLabel"] p,
+        .stApp [data-testid="stMarkdownContainer"] {{ color: {text}; }}
+        /* Поля ввода: text/number/textarea/select */
+        .stApp [data-baseweb="input"] input,
+        .stApp [data-baseweb="textarea"] textarea,
+        .stApp [data-baseweb="select"] div {{
+            color: {text}; background: {field_bg};
+        }}
+        .stApp [data-baseweb="input"], .stApp [data-baseweb="textarea"],
+        .stApp [data-baseweb="select"] > div {{
+            background: {field_bg}; border-color: {border};
+        }}
         </style>
         """,
         unsafe_allow_html=True,
