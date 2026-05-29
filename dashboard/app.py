@@ -7,14 +7,17 @@ from __future__ import annotations
 
 import json
 import math
+import os
+import subprocess
 import sys
-from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path
+from uuid import uuid4
 
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
+import yaml
 from plotly.subplots import make_subplots
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -26,6 +29,9 @@ from core.types import EpisodeResult, Stage  # noqa: E402
 EXAMPLES_DIR = _REPO_ROOT / "examples"
 REPORTS_DIR = _REPO_ROOT / "reports"
 TASKS_DIR = _REPO_ROOT / "tasks"
+TASK_SPECS_DIR = TASKS_DIR / "specs"
+RUNS_DIR = _REPO_ROOT / "runs"
+RUNNER_CONFIGS_DIR = RUNS_DIR / "_dashboard_configs"
 
 STAGES_ORDER = [
     Stage.EDA,
@@ -61,7 +67,7 @@ MOCK_TASK_CATALOG = {
 st.set_page_config(page_title="mlgym-coach dashboard", page_icon=":bar_chart:", layout="wide")
 
 
-@st.cache_data
+@st.cache_data(ttl=5)
 def load_episodes_with_meta() -> list[dict]:
     episodes: list[dict] = []
     for directory in (EXAMPLES_DIR, REPORTS_DIR):
@@ -75,6 +81,20 @@ def load_episodes_with_meta() -> list[dict]:
                     "episode": ep,
                     "source": "examples" if directory == EXAMPLES_DIR else "reports",
                     "file": path.name,
+                    "mtime": datetime.fromtimestamp(path.stat().st_mtime),
+                }
+            )
+    if RUNS_DIR.exists():
+        for path in sorted(RUNS_DIR.rglob("seed_*.json")):
+            if "_dashboard_configs" in path.parts:
+                continue
+            ep = EpisodeResult.from_json(path.read_text(encoding="utf-8"))
+            episodes.append(
+                {
+                    "id": f"{ep.task_id}:{ep.agent}:seed{ep.seed}:{path.stem}:{path.parent.name}",
+                    "episode": ep,
+                    "source": "runs",
+                    "file": str(path.relative_to(_REPO_ROOT)),
                     "mtime": datetime.fromtimestamp(path.stat().st_mtime),
                 }
             )
@@ -127,6 +147,28 @@ def load_tasks(episodes_with_meta: list[dict]) -> list[dict]:
         )
 
     return sorted(tasks.values(), key=lambda x: x["id"])
+
+
+def load_task_specs() -> dict[str, dict]:
+    specs: dict[str, dict] = {}
+    if not TASK_SPECS_DIR.exists():
+        return specs
+
+    for path in sorted(TASK_SPECS_DIR.glob("*.yaml")):
+        try:
+            raw = yaml.safe_load(path.read_text(encoding="utf-8"))
+        except Exception:
+            raw = {}
+        if not isinstance(raw, dict):
+            continue
+        task_id = str(raw.get("id", path.stem))
+        specs[task_id] = {
+            "id": task_id,
+            "description": str(raw.get("description", "No description yet.")),
+            "metric": str(raw.get("metric", "unknown")),
+            "spec_path": str(path.relative_to(_REPO_ROOT)),
+        }
+    return specs
 
 
 def episode_label(meta: dict) -> str:
@@ -369,42 +411,120 @@ def page_tasks(tasks: list[dict], df: pd.DataFrame) -> None:
 
 def page_run_experiment(tasks: list[dict]) -> None:
     st.title("Запуск эксперимента")
-    st.caption("Мок-интерфейс: конфиг сохраняется локально, без запуска раннера")
+    st.caption("Запуск через runner.run в фоне; статус подхватывается по PID и runs/")
 
-    if "mock_launches" not in st.session_state:
-        st.session_state.mock_launches = []
+    if "launches" not in st.session_state:
+        st.session_state.launches = []
 
-    task_options = [t["id"] for t in tasks] or ["churn_small"]
+    task_specs = load_task_specs()
+    task_options = sorted(task_specs.keys())
+
+    if not task_options:
+        st.warning("Не найдены task specs в tasks/specs/*.yaml. Запуск недоступен.")
+        return
 
     with st.form("launch_form", clear_on_submit=False):
         col1, col2, col3 = st.columns(3)
         task_id = col1.selectbox("Задача", task_options)
         agent = col2.selectbox("Тип агента", ["baseline", "scaffold"])
-        model = col3.text_input("Модель", value="claude-opus-4-7")
+        model = col3.text_input("Модель", value="fake-model")
 
-        c4, c5, c6 = st.columns(3)
+        c4, c5, c6, c7 = st.columns(4)
         seeds = c4.number_input("Число сидов", min_value=1, max_value=20, value=3)
         budget = c5.number_input("Токен-бюджет", min_value=500, max_value=50000, value=8000, step=500)
-        hint_level = c6.selectbox("Уровень подсказок", ["L1", "L2", "L3"])
+        hint_level = c6.selectbox("Уровень подсказок", ["L1", "L2", "L3"])  # пока в config для runner metadata
+        llm_mode = c7.selectbox("Режим LLM", ["mock", "real"], index=0)
+        max_steps = st.number_input("Максимум шагов", min_value=2, max_value=50, value=6)
 
-        submitted = st.form_submit_button("Запустить (mock)", use_container_width=True)
+        submitted = st.form_submit_button("Запустить", use_container_width=True)
         if submitted:
+            ts = datetime.now().strftime("%Y%m%d-%H%M%S")
+            run_id = f"{task_id}-{agent}-{ts}-{uuid4().hex[:6]}"
+            experiment_name = f"dashboard-{run_id}"
+
+            config = {
+                "experiment_name": experiment_name,
+                "model": model,
+                "env": "fake" if llm_mode == "mock" else "real",
+                "agents": [agent],
+                "seeds": list(range(int(seeds))),
+                "tasks": [task_specs[task_id]["spec_path"]],
+                "token_budget": int(budget),
+                "max_steps": int(max_steps),
+                "output_dir": "runs",
+                # runner игнорирует неизвестные поля; оставляем для дебага/аудита.
+                "hint_level": hint_level,
+                "llm_mode": llm_mode,
+            }
+
+            RUNNER_CONFIGS_DIR.mkdir(parents=True, exist_ok=True)
+            cfg_rel = Path("runs") / "_dashboard_configs" / f"{experiment_name}.yaml"
+            cfg_abs = _REPO_ROOT / cfg_rel
+            cfg_abs.write_text(yaml.safe_dump(config, sort_keys=False, allow_unicode=True), encoding="utf-8")
+
+            output_dir = RUNS_DIR / experiment_name
+            output_dir.mkdir(parents=True, exist_ok=True)
+            log_path = output_dir / "runner.log"
+            python_bin = _REPO_ROOT / ".venv" / "bin" / "python"
+            cmd = [str(python_bin), "-m", "runner.run", "--config", str(cfg_abs)]
+            env = os.environ.copy()
+            env["MLGYM_LLM"] = llm_mode
+
+            with log_path.open("a", encoding="utf-8") as log_file:
+                proc = subprocess.Popen(  # noqa: S603
+                    cmd,
+                    cwd=str(_REPO_ROOT),
+                    env=env,
+                    stdout=log_file,
+                    stderr=subprocess.STDOUT,
+                )
+
             launch = {
                 "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "run_id": run_id,
+                "experiment_name": experiment_name,
                 "task_id": task_id,
                 "agent": agent,
                 "model": model,
                 "seeds": int(seeds),
                 "budget_tokens": int(budget),
                 "hint_level": hint_level,
-                "status": "launched (mock)",
+                "llm_mode": llm_mode,
+                "config_path": str(cfg_rel),
+                "output_dir": str(output_dir.relative_to(_REPO_ROOT)),
+                "log_path": str(log_path.relative_to(_REPO_ROOT)),
+                "pid": proc.pid,
+                "status": "running",
             }
-            st.session_state.mock_launches.insert(0, launch)
-            st.success("Эксперимент запущен (мок). Конфиг сохранен локально в сессии.")
+            st.session_state.launches.insert(0, launch)
+            st.success(f"Эксперимент запущен в фоне (PID {proc.pid}).")
 
-    if st.session_state.mock_launches:
-        st.subheader("История mock запусков")
-        st.dataframe(pd.DataFrame(st.session_state.mock_launches), use_container_width=True, hide_index=True)
+    if st.session_state.launches:
+        for launch in st.session_state.launches:
+            pid = launch.get("pid")
+            output_dir = _REPO_ROOT / launch["output_dir"]
+            run_files = list(output_dir.rglob("seed_*.json")) if output_dir.exists() else []
+            launch["result_files"] = len(run_files)
+
+            if launch["status"] in {"completed", "failed"}:
+                continue
+
+            running = False
+            if isinstance(pid, int):
+                try:
+                    os.kill(pid, 0)
+                    running = True
+                except OSError:
+                    running = False
+
+            if running:
+                launch["status"] = "running"
+            else:
+                launch["status"] = "completed" if run_files else "failed"
+
+        st.subheader("История запусков")
+        st.dataframe(pd.DataFrame(st.session_state.launches), use_container_width=True, hide_index=True)
+        st.button("Обновить статусы", use_container_width=True)
 
 
 def page_runs_list(df: pd.DataFrame) -> None:

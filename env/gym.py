@@ -55,6 +55,7 @@ class Env:
         self._final_test_score: Optional[float] = None
         self._last_coverage: float = 0.0
         self._has_run: bool = False
+        self._current_code: str = ""  # последний принятый CODE — его исполняют RUN/SUBMIT
 
     def reset(self, task: Optional[Task] = None) -> Observation:
         if task is not None:
@@ -67,6 +68,7 @@ class Env:
         self._final_test_score = None
         self._last_coverage = 0.0
         self._has_run = False
+        self._current_code = ""
         return Observation(
             task=self.task,
             stage=self._stage,
@@ -154,16 +156,24 @@ class Env:
         return current
 
     def _execute(self, action: Action) -> tuple[str, Optional[float]]:
-        """Вернуть (result, val_score) для шага. val_score только у RUN."""
+        """Вернуть (result, val_score) для шага. val_score только у RUN.
+
+        RUN/SUBMIT исполняют последний принятый CODE (self._current_code),
+        а не собственный content действия (там обычно лишь «run current code»).
+        """
         if action.type == ActionType.RUN:
-            return run_solution(action.content, self.task, mode="run")
+            if not self._current_code:
+                return "нет кода для запуска: сначала пришли действие CODE", None
+            return run_solution(self._current_code, self.task, mode="run")
         if action.type == ActionType.SUBMIT:
-            result, test_score = run_solution(action.content, self.task, mode="submit")
+            code = self._current_code or action.content
+            result, test_score = run_solution(code, self.task, mode="submit")
             self._final_test_score = test_score
             # Step.val_score держим только для валидации — у SUBMIT-шага оставляем None,
             # а test-скор живёт в EpisodeResult.final_test_score.
             return result, None
         if action.type == ActionType.CODE:
+            self._current_code = action.content
             lines = action.content.count("\n") + 1
             return f"code accepted ({lines} lines)", None
         if action.type == ActionType.PLAN:
