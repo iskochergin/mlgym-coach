@@ -11,6 +11,9 @@ from tasks.metrics import MetricFn, get_metric
 
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
+UPLOADS_DIR = _REPO_ROOT / "tasks" / "uploads"
+HIDDEN_LABELS_DIR = _REPO_ROOT / "tasks" / "hidden_labels"
+SPECS_DIR = _REPO_ROOT / "tasks" / "specs"
 
 
 @dataclass(frozen=True)
@@ -36,6 +39,19 @@ def load_task(path: str | Path) -> LoadedTask:
         hidden_labels_path=hidden_labels_path,
         metric_fn=metric_fn,
     )
+
+
+def load_task_by_id(task_id: str) -> LoadedTask:
+    candidates = [
+        HIDDEN_LABELS_DIR / task_id / "task.yaml",
+        UPLOADS_DIR / task_id / "task.yaml",
+        SPECS_DIR / f"{task_id}.yaml",
+    ]
+    for path in candidates:
+        if path.exists():
+            return load_task(path)
+    searched = ", ".join(str(path) for path in candidates)
+    raise FileNotFoundError(f"Task id {task_id!r} not found. Searched: {searched}")
 
 
 def _task_kwargs(raw: dict[str, Any], spec_path: Path) -> dict[str, Any]:
