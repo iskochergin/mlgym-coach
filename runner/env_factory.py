@@ -23,5 +23,9 @@ def build_env(
     if env_name == "fake":
         return FakeEnv(task=task, agent=agent, seed=seed, config=config)
     if env_name == "real":
-        return build_real_env(task=task, agent=agent, seed=seed, config=config)
+        # coach: "dummy" (baseline) | "real" (scaffold). Берём из конфига, дефолт
+        # "dummy" — старые конфиги без поля coach не ломаются. getattr (а не
+        # config.get), т.к. config — это FakeEnvConfig dataclass, а не dict.
+        coach = str(getattr(config, "coach", "dummy"))
+        return build_real_env(task=task, agent=agent, seed=seed, config=config, coach=coach)
     raise ValueError(f"Unsupported env {env_name!r}. Supported values: fake, real")
