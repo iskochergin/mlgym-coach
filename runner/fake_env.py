@@ -65,14 +65,14 @@ class FakeEnv:
         steps = [
             Step(
                 idx=0,
-                stage=Stage.UNDERSTAND,
+                stage=Stage.EDA,
                 action=Action(
                     type=ActionType.PLAN,
                     content=f"Understand {self.task.id}, metric {metric}, then build baseline.",
                 ),
                 result="plan noted",
                 tokens_used=self._tokens(150, 260),
-                hints=self._hints(Stage.UNDERSTAND, "validation_plan"),
+                hints=self._hints(Stage.EDA, "validation_plan"),
             ),
             Step(
                 idx=1,
