@@ -56,16 +56,19 @@ class Env:
         seed: int = 0,
         agent_name: str = "baseline",
         hidden_labels_path: Optional[str] = None,
+        run_dir: Optional[str] = None,
     ) -> None:
         self.task = task
         self.coach: _CoachLike = coach if coach is not None else DummyCoach()
         self.token_budget = token_budget
         self.seed = seed
         self.agent_name = agent_name
-        # Путь к y_test для грейдера. Если явно не задан — выводим по соглашению.
+        # Приоритет hidden_labels: явный параметр > соглашение по task.id > None.
         self.hidden_labels_path: Optional[str] = (
             hidden_labels_path if hidden_labels_path is not None else _default_hidden_labels(task)
         )
+        # Куда писать снапшоты эпизода (partial во время прогона + финальный).
+        self.run_dir: Path = Path(run_dir) if run_dir is not None else (_REPO_ROOT / "runs" / "local")
 
         self._history: list[Step] = []
         self._stage: Stage = Stage.EDA  # стартовая стадия (UNDERSTAND убрали в Stage 5→4)
@@ -142,9 +145,12 @@ class Env:
         obs.hints = list(hints)
 
         self._history.append(step)
+        # Инкрементальный снапшот: дашборд, тейлящий файл, видит прогресс вживую.
+        self._write_partial()
         return obs
 
-    def result(self) -> EpisodeResult:
+    def _episode_snapshot(self) -> EpisodeResult:
+        """Текущий снапшот эпизода (история + накопленные токены/покрытие)."""
         total_tokens = sum(s.tokens_used for s in self._history)
         return EpisodeResult(
             task_id=self.task.id,
@@ -159,6 +165,43 @@ class Env:
                 "coach": type(self.coach).__name__,
             },
         )
+
+    def result(self) -> EpisodeResult:
+        """Финализировать эпизод: записать episode.json, удалить partial."""
+        snapshot = self._episode_snapshot()
+        self._write_final(snapshot)
+        return snapshot
+
+    # ─────────────────────────── snapshot I/O ───────────────────────────
+
+    def _partial_path(self) -> Path:
+        return self.run_dir / "episode.partial.json"
+
+    def _final_path(self) -> Path:
+        return self.run_dir / "episode.json"
+
+    def _atomic_write(self, path: Path, text: str) -> None:
+        """Запись через временный файл + os.replace (атомарная подмена),
+        чтобы читатель не поймал полузаписанный JSON."""
+        self.run_dir.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_suffix(path.suffix + ".tmp")
+        tmp.write_text(text, encoding="utf-8")
+        os.replace(tmp, path)
+
+    def _write_partial(self) -> None:
+        try:
+            self._atomic_write(self._partial_path(), self._episode_snapshot().to_json())
+        except Exception as e:  # запись снапшота не должна валить эпизод
+            print(f"[env.gym] не удалось записать partial-снапшот: {e!r}", file=sys.stderr)
+
+    def _write_final(self, snapshot: EpisodeResult) -> None:
+        try:
+            self._atomic_write(self._final_path(), snapshot.to_json())
+            partial = self._partial_path()
+            if partial.exists():
+                partial.unlink()
+        except Exception as e:
+            print(f"[env.gym] не удалось записать финальный снапшот: {e!r}", file=sys.stderr)
 
     # ─────────────────────────── helpers ───────────────────────────
 
