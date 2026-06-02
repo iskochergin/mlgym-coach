@@ -25,6 +25,7 @@ if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
 from core.types import EpisodeResult, Stage  # noqa: E402
+from dashboard.i18n import LANG_OPTIONS, tr  # noqa: E402
 from dashboard.product_flow import page_product_flow  # noqa: E402
 
 EXAMPLES_DIR = _REPO_ROOT / "examples"
@@ -256,8 +257,9 @@ def render_hints(hints: list) -> None:
 
 
 def render_timeline(steps: list) -> None:
+    lang = st.session_state.get("lang", "ru")
     if not steps:
-        st.info("No steps yet.")
+        st.info(tr(lang, "timeline.no_steps_generic"))
         return
 
     for step in steps:
@@ -265,11 +267,11 @@ def render_timeline(steps: list) -> None:
         with st.expander(title):
             left, right = st.columns([2, 1])
             with left:
-                st.markdown("**Action content**")
+                st.markdown(f"**{tr(lang, 'timeline.action_content')}**")
                 st.code(step.action.content or "-", language="python")
-                st.markdown(f"**Environment result:** {step.result}")
+                st.markdown(f"**{tr(lang, 'timeline.env_result')}:** {step.result}")
             with right:
-                st.metric("Tokens used", step.tokens_used)
+                st.metric(tr(lang, "timeline.tokens_used"), step.tokens_used)
                 st.metric("Val score", f"{step.val_score:.3f}" if step.val_score is not None else "-")
             if step.hints:
                 render_hints(step.hints)
@@ -293,15 +295,16 @@ def per_step_dataframe(episode: EpisodeResult) -> pd.DataFrame:
 
 
 def render_step_charts(episode: EpisodeResult, title_suffix: str = "") -> None:
+    lang = st.session_state.get("lang", "ru")
     df = per_step_dataframe(episode)
     if df.empty:
-        st.info("No chart data.")
+        st.info(tr(lang, "chart.no_data_generic"))
         return
 
     fig = make_subplots(
         rows=1,
         cols=2,
-        subplot_titles=("Cumulative tokens", "Validation score by step"),
+        subplot_titles=(tr(lang, "chart.cum_tokens"), tr(lang, "chart.val_step")),
     )
     fig.add_trace(
         go.Scatter(x=df["idx"], y=df["tokens_cumulative"], mode="lines+markers", name="tokens", line=dict(color="#4f46e5")),
@@ -352,10 +355,11 @@ def mean_se(values: list[float]) -> str:
 
 def page_overview(df: pd.DataFrame) -> None:
     st.title("mlgym-coach dashboard")
-    st.caption("Единая точка просмотра задач, запусков и сравнения baseline vs scaffold")
+    lang = st.session_state.get("lang", "ru")
+    st.caption(tr(lang, "overview.caption"))
 
     if df.empty:
-        st.info("Еще нет прогонов. Добавьте JSON в examples/ или reports/.")
+        st.info(tr(lang, "overview.empty"))
         return
 
     baseline = df[df["agent"] == "baseline"]
@@ -363,32 +367,33 @@ def page_overview(df: pd.DataFrame) -> None:
 
     render_cards(
         [
-            ("Total runs", str(len(df)), f"tasks: {df['task_id'].nunique()}"),
-            ("Latest run", df.iloc[0]["file"], df.iloc[0]["updated_at"].strftime("%Y-%m-%d %H:%M")),
+            (tr(lang, "overview.total_runs"), str(len(df)), tr(lang, "overview.tasks_count", count=df["task_id"].nunique())),
+            (tr(lang, "overview.latest_run"), df.iloc[0]["file"], df.iloc[0]["updated_at"].strftime("%Y-%m-%d %H:%M")),
             (
-                "Baseline mean score/tokens",
+                tr(lang, "overview.baseline_mean"),
                 f"{baseline['final_test_score'].mean():.3f}" if not baseline.empty else "-",
-                f"tokens {int(baseline['total_tokens'].mean())}" if not baseline.empty else "-",
+                tr(lang, "overview.tokens", value=int(baseline["total_tokens"].mean())) if not baseline.empty else "-",
             ),
             (
-                "Scaffold mean score/tokens",
+                tr(lang, "overview.scaffold_mean"),
                 f"{scaffold['final_test_score'].mean():.3f}" if not scaffold.empty else "-",
-                f"tokens {int(scaffold['total_tokens'].mean())}" if not scaffold.empty else "-",
+                tr(lang, "overview.tokens", value=int(scaffold["total_tokens"].mean())) if not scaffold.empty else "-",
             ),
         ]
     )
 
-    st.subheader("Recent results")
+    st.subheader(tr(lang, "overview.recent_results"))
     show_cols = ["task_id", "agent", "seed", "final_test_score", "total_tokens", "updated_at", "source", "file"]
     st.dataframe(df[show_cols].head(10), use_container_width=True, hide_index=True)
 
 
 def page_tasks(tasks: list[dict], df: pd.DataFrame) -> None:
-    st.title("Задачи")
-    st.caption("Каталог задач из tasks/ и обнаруженных прогонов")
+    lang = st.session_state.get("lang", "ru")
+    st.title(tr(lang, "tasks.title"))
+    st.caption(tr(lang, "tasks.caption"))
 
     if not tasks:
-        st.info("Список задач пуст.")
+        st.info(tr(lang, "tasks.empty"))
         return
 
     for task in tasks:
@@ -405,14 +410,15 @@ def page_tasks(tasks: list[dict], df: pd.DataFrame) -> None:
         )
         if not task_df.empty:
             c1, c2, c3 = st.columns(3)
-            c1.metric("Runs", len(task_df))
-            c2.metric("Best score", f"{task_df['final_test_score'].max():.3f}")
-            c3.metric("Mean tokens", f"{int(task_df['total_tokens'].mean())}")
+            c1.metric(tr(lang, "tasks.runs"), len(task_df))
+            c2.metric(tr(lang, "tasks.best_score"), f"{task_df['final_test_score'].max():.3f}")
+            c3.metric(tr(lang, "tasks.mean_tokens"), f"{int(task_df['total_tokens'].mean())}")
 
 
 def page_run_experiment(tasks: list[dict]) -> None:
-    st.title("Запуск эксперимента")
-    st.caption("Запуск через runner.run в фоне; статус подхватывается по PID и runs/")
+    lang = st.session_state.get("lang", "ru")
+    st.title(tr(lang, "runexp.title"))
+    st.caption(tr(lang, "runexp.caption"))
 
     if "launches" not in st.session_state:
         st.session_state.launches = []
@@ -421,23 +427,23 @@ def page_run_experiment(tasks: list[dict]) -> None:
     task_options = sorted(task_specs.keys())
 
     if not task_options:
-        st.warning("Не найдены task specs в tasks/specs/*.yaml. Запуск недоступен.")
+        st.warning(tr(lang, "runexp.no_specs"))
         return
 
     with st.form("launch_form", clear_on_submit=False):
         col1, col2, col3 = st.columns(3)
-        task_id = col1.selectbox("Задача", task_options)
-        agent = col2.selectbox("Тип агента", ["baseline", "scaffold"])
-        model = col3.text_input("Модель", value="fake-model")
+        task_id = col1.selectbox(tr(lang, "runexp.task"), task_options)
+        agent = col2.selectbox(tr(lang, "runexp.agent"), ["baseline", "scaffold"])
+        model = col3.text_input(tr(lang, "runexp.model"), value="fake-model")
 
         c4, c5, c6, c7 = st.columns(4)
-        seeds = c4.number_input("Число сидов", min_value=1, max_value=20, value=3)
-        budget = c5.number_input("Токен-бюджет", min_value=500, max_value=50000, value=8000, step=500)
-        hint_level = c6.selectbox("Уровень подсказок", ["L1", "L2", "L3"])  # пока в config для runner metadata
-        llm_mode = c7.selectbox("Режим LLM", ["mock", "real"], index=0)
-        max_steps = st.number_input("Максимум шагов", min_value=2, max_value=50, value=6)
+        seeds = c4.number_input(tr(lang, "runexp.seeds"), min_value=1, max_value=20, value=3)
+        budget = c5.number_input(tr(lang, "runexp.token_budget"), min_value=500, max_value=50000, value=8000, step=500)
+        hint_level = c6.selectbox(tr(lang, "runexp.hint_level"), ["L1", "L2", "L3"])
+        llm_mode = c7.selectbox(tr(lang, "runexp.llm_mode"), ["mock", "real"], index=0)
+        max_steps = st.number_input(tr(lang, "runexp.max_steps"), min_value=2, max_value=50, value=6)
 
-        submitted = st.form_submit_button("Запустить", use_container_width=True)
+        submitted = st.form_submit_button(tr(lang, "runexp.submit"), use_container_width=True)
         if submitted:
             ts = datetime.now().strftime("%Y%m%d-%H%M%S")
             run_id = f"{task_id}-{agent}-{ts}-{uuid4().hex[:6]}"
@@ -498,7 +504,7 @@ def page_run_experiment(tasks: list[dict]) -> None:
                 "status": "running",
             }
             st.session_state.launches.insert(0, launch)
-            st.success(f"Эксперимент запущен в фоне (PID {proc.pid}).")
+            st.success(tr(lang, "runexp.started", pid=proc.pid))
 
     if st.session_state.launches:
         for launch in st.session_state.launches:
@@ -523,21 +529,22 @@ def page_run_experiment(tasks: list[dict]) -> None:
             else:
                 launch["status"] = "completed" if run_files else "failed"
 
-        st.subheader("История запусков")
+        st.subheader(tr(lang, "runexp.history"))
         st.dataframe(pd.DataFrame(st.session_state.launches), use_container_width=True, hide_index=True)
-        st.button("Обновить статусы", use_container_width=True)
+        st.button(tr(lang, "runexp.refresh"), use_container_width=True)
 
 
 def page_runs_list(df: pd.DataFrame) -> None:
-    st.title("Список прогонов")
+    lang = st.session_state.get("lang", "ru")
+    st.title(tr(lang, "runs.title"))
     if df.empty:
-        st.info("Еще нет прогонов.")
+        st.info(tr(lang, "runs.empty"))
         return
 
     col1, col2, col3 = st.columns(3)
-    task_filter = col1.selectbox("Фильтр по задаче", ["all"] + sorted(df["task_id"].unique().tolist()))
-    agent_filter = col2.selectbox("Фильтр по агенту", ["all"] + sorted(df["agent"].unique().tolist()))
-    sort_by = col3.selectbox("Сортировка", ["updated_at", "final_test_score", "total_tokens"])
+    task_filter = col1.selectbox(tr(lang, "runs.filter_task"), ["all"] + sorted(df["task_id"].unique().tolist()))
+    agent_filter = col2.selectbox(tr(lang, "runs.filter_agent"), ["all"] + sorted(df["agent"].unique().tolist()))
+    sort_by = col3.selectbox(tr(lang, "runs.sort"), ["updated_at", "final_test_score", "total_tokens"])
 
     filtered = df.copy()
     if task_filter != "all":
@@ -551,13 +558,14 @@ def page_runs_list(df: pd.DataFrame) -> None:
 
 
 def page_run_details(episodes_with_meta: list[dict]) -> None:
-    st.title("Один прогон")
+    lang = st.session_state.get("lang", "ru")
+    st.title(tr(lang, "details.title"))
     if not episodes_with_meta:
-        st.info("Еще нет прогонов.")
+        st.info(tr(lang, "runs.empty"))
         return
 
     options = {episode_label(item): item for item in episodes_with_meta}
-    selected = st.selectbox("Выберите прогон", list(options.keys()))
+    selected = st.selectbox(tr(lang, "details.pick"), list(options.keys()))
     item = options[selected]
     ep = item["episode"]
 
@@ -566,37 +574,38 @@ def page_run_details(episodes_with_meta: list[dict]) -> None:
             ("Task", ep.task_id, f"source: {item['source']} / {item['file']}"),
             ("Agent", ep.agent, f"seed {ep.seed}"),
             ("Final test score", f"{ep.final_test_score:.3f}" if ep.final_test_score is not None else "-", "higher is better"),
-            ("Checklist coverage", f"{ep.checklist_coverage:.0%}", f"total tokens {ep.total_tokens}"),
+            ("Checklist coverage", f"{ep.checklist_coverage:.0%}", tr(lang, "details.total_tokens", value=ep.total_tokens)),
         ]
     )
 
-    st.subheader("Прогресс по стадиям")
+    st.subheader(tr(lang, "details.progress"))
     render_progress_stepper(ep.steps)
 
-    st.subheader("Графики по шагам")
+    st.subheader(tr(lang, "details.charts"))
     render_step_charts(ep, title_suffix=f"{ep.task_id} | {ep.agent} | seed {ep.seed}")
 
-    st.subheader("Таймлайн")
+    st.subheader(tr(lang, "details.timeline"))
     render_timeline(ep.steps)
 
 
 def page_compare(episodes_with_meta: list[dict]) -> None:
-    st.title("Сравнение прогонов")
+    lang = st.session_state.get("lang", "ru")
+    st.title(tr(lang, "compare.title"))
     if len(episodes_with_meta) < 2:
-        st.info("Нужно минимум 2 прогона.")
+        st.info(tr(lang, "compare.need_two"))
         return
 
     labels = [episode_label(item) for item in episodes_with_meta]
-    selected_labels = st.multiselect("Выберите 2+ прогона", labels, default=labels[:2])
+    selected_labels = st.multiselect(tr(lang, "compare.pick"), labels, default=labels[:2])
     if len(selected_labels) < 2:
-        st.warning("Выберите минимум два прогона для сравнения.")
+        st.warning(tr(lang, "compare.pick_warn"))
         return
 
     selected = [episodes_with_meta[labels.index(label)] for label in selected_labels]
 
     left, right = st.columns(2)
     with left:
-        render_overlay_chart(selected, "tokens_cumulative", "Cumulative tokens (overlay)")
+        render_overlay_chart(selected, "tokens_cumulative", tr(lang, "compare.tokens_overlay"))
     with right:
         render_overlay_chart(selected, "val_score", "Validation score (overlay)")
 
@@ -615,10 +624,10 @@ def page_compare(episodes_with_meta: list[dict]) -> None:
             }
         )
     metrics_df = pd.DataFrame(rows)
-    st.subheader("Метрики выбранных прогонов")
+    st.subheader(tr(lang, "compare.metrics"))
     st.dataframe(metrics_df, use_container_width=True, hide_index=True)
 
-    st.subheader("Агрегаты по группам (mean ± SE)")
+    st.subheader(tr(lang, "compare.agg"))
     agg_rows = []
     for agent, group in metrics_df.groupby("agent"):
         agg_rows.append(
@@ -640,33 +649,42 @@ def main() -> None:
 
     with st.sidebar:
         st.title("mlgym-coach")
+        current = st.session_state.get("lang", "ru")
+        lang_label_to_code = {label: code for code, label in LANG_OPTIONS.items()}
+        selected_label = st.selectbox(
+            tr(current, "sidebar.language"),
+            list(lang_label_to_code.keys()),
+            index=list(LANG_OPTIONS.keys()).index(current) if current in LANG_OPTIONS else 0,
+        )
+        st.session_state["lang"] = lang_label_to_code[selected_label]
+        lang = st.session_state["lang"]
         page = st.radio(
-            "Навигация",
+            tr(lang, "sidebar.navigation"),
             [
-                "New task",
-                "Overview",
-                "Tasks",
-                "Run experiment",
-                "Runs list",
-                "Run details",
-                "Compare",
+                tr(lang, "page.new_task"),
+                tr(lang, "page.overview"),
+                tr(lang, "page.tasks"),
+                tr(lang, "page.run_experiment"),
+                tr(lang, "page.runs_list"),
+                tr(lang, "page.run_details"),
+                tr(lang, "page.compare"),
             ],
         )
-        st.caption(f"Loaded runs: {len(episodes_with_meta)}")
+        st.caption(tr(lang, "sidebar.loaded_runs", count=len(episodes_with_meta)))
 
-    if page == "New task":
+    if page == tr(lang, "page.new_task"):
         page_product_flow()
-    elif page == "Overview":
+    elif page == tr(lang, "page.overview"):
         page_overview(df)
-    elif page == "Tasks":
+    elif page == tr(lang, "page.tasks"):
         page_tasks(tasks, df)
-    elif page == "Run experiment":
+    elif page == tr(lang, "page.run_experiment"):
         page_run_experiment(tasks)
-    elif page == "Runs list":
+    elif page == tr(lang, "page.runs_list"):
         page_runs_list(df)
-    elif page == "Run details":
+    elif page == tr(lang, "page.run_details"):
         page_run_details(episodes_with_meta)
-    elif page == "Compare":
+    elif page == tr(lang, "page.compare"):
         page_compare(episodes_with_meta)
 
 
