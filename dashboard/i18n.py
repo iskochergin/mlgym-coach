@@ -11,6 +11,7 @@ LANG_OPTIONS = {
 TEXTS = {
     "sidebar.navigation": {"ru": "Навигация", "en": "Navigation", "hy": "Նավիգացիա"},
     "sidebar.language": {"ru": "Язык", "en": "Language", "hy": "Լեզու"},
+    "sidebar.dark_theme": {"ru": "Тёмная тема", "en": "Dark theme", "hy": "Մուգ թեմա"},
     "sidebar.loaded_runs": {"ru": "Загружено прогонов: {count}", "en": "Loaded runs: {count}", "hy": "Բեռնված վազքեր՝ {count}"},
     "page.new_task": {"ru": "Новая задача", "en": "New task", "hy": "Նոր առաջադրանք"},
     "page.overview": {"ru": "Обзор", "en": "Overview", "hy": "Ամփոփում"},

@@ -642,6 +642,47 @@ def page_compare(episodes_with_meta: list[dict]) -> None:
     st.dataframe(pd.DataFrame(agg_rows), use_container_width=True, hide_index=True)
 
 
+def apply_theme(dark_mode: bool) -> None:
+    """Светлая тема — из `.streamlit/config.toml`. Тёмная — через CSS с явными цветами текста и полей."""
+    if not dark_mode:
+        return
+
+    bg = "#0b1220"
+    text = "#e5e7eb"
+    muted = "#9ca3af"
+    panel = "#111827"
+    field_bg = "#1f2937"
+    border = "#374151"
+    st.markdown(
+        f"""
+        <style>
+        .stApp {{ background: {bg}; color: {text}; }}
+        section[data-testid="stSidebar"] {{ background: {panel}; }}
+        .stApp h1, .stApp h2, .stApp h3, .stApp h4, .stApp p, .stApp span,
+        .stApp label, .stApp [data-testid="stWidgetLabel"] p,
+        .stApp [data-testid="stWidgetLabel"],
+        .stApp [data-testid="stMarkdownContainer"],
+        .stApp [data-testid="stCaptionContainer"] p {{
+            color: {text} !important;
+        }}
+        .stApp [data-testid="stCaptionContainer"] p {{ color: {muted} !important; }}
+        .stApp [data-baseweb="input"] input,
+        .stApp [data-baseweb="textarea"] textarea,
+        .stApp [data-baseweb="select"] div {{
+            color: {text} !important;
+            background: {field_bg} !important;
+        }}
+        .stApp [data-baseweb="input"], .stApp [data-baseweb="textarea"],
+        .stApp [data-baseweb="select"] > div {{
+            background: {field_bg} !important;
+            border-color: {border} !important;
+        }}
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
 def main() -> None:
     episodes_with_meta = load_episodes_with_meta()
     df = episodes_dataframe(episodes_with_meta) if episodes_with_meta else pd.DataFrame()
@@ -658,6 +699,8 @@ def main() -> None:
         )
         st.session_state["lang"] = lang_label_to_code[selected_label]
         lang = st.session_state["lang"]
+        dark_mode = st.toggle(tr(lang, "sidebar.dark_theme"), value=st.session_state.get("dark_mode", False))
+        st.session_state["dark_mode"] = dark_mode
         page = st.radio(
             tr(lang, "sidebar.navigation"),
             [
@@ -671,6 +714,8 @@ def main() -> None:
             ],
         )
         st.caption(tr(lang, "sidebar.loaded_runs", count=len(episodes_with_meta)))
+
+    apply_theme(st.session_state.get("dark_mode", False))
 
     if page == tr(lang, "page.new_task"):
         page_product_flow()
