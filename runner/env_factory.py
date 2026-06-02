@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Protocol
+from typing import Callable, Optional, Protocol
 
 from core.types import EpisodeResult, Task
 from runner.fake_env import FakeEnv, FakeEnvConfig
@@ -8,7 +8,7 @@ from runner.real_env import RealGymRunnerEnv
 
 
 class RunnerEnv(Protocol):
-    def run(self) -> EpisodeResult: ...
+    def run(self, on_step: Optional[Callable[[EpisodeResult], None]] = None) -> EpisodeResult: ...
 
 
 def build_env(

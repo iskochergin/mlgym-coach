@@ -3,7 +3,7 @@ from __future__ import annotations
 import hashlib
 import random
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Callable, Optional
 
 from core.types import Action, ActionType, EpisodeResult, Hint, Stage, Step, Task
 
@@ -26,21 +26,35 @@ class FakeEnv:
         self.config = config
         self._rng = random.Random(_stable_seed(task.id, agent, seed))
 
-    def run(self) -> EpisodeResult:
+    def run(self, on_step: Optional[Callable[[EpisodeResult], None]] = None) -> EpisodeResult:
         val_scores, final_score = self._scores()
         coverage = self._coverage()
+        stage_coverage = self._stage_coverage_dict(coverage)
         steps = self._steps(val_scores, final_score)
 
-        return EpisodeResult(
+        res = EpisodeResult(
             task_id=self.task.id,
             agent=self.agent,
             seed=self.seed,
             steps=steps,
             final_test_score=final_score,
             checklist_coverage=coverage,
+            stage_coverage=stage_coverage,
             total_tokens=sum(step.tokens_used for step in steps),
             config=self._episode_config(),
         )
+        if on_step:
+            on_step(res)
+        return res
+
+    def _stage_coverage_dict(self, total_coverage: float) -> dict[str, float]:
+        # Распределяем общее покрытие по стадиям для фейка
+        return {
+            Stage.EDA.value: min(1.0, total_coverage * 1.2),
+            Stage.BASELINE.value: min(1.0, total_coverage * 0.8),
+            Stage.IMPROVE.value: min(1.0, total_coverage * 0.5),
+            Stage.SUBMIT.value: 1.0 if total_coverage > 0.9 else 0.0,
+        }
 
     def _scores(self) -> tuple[list[float], float]:
         if self.task.metric_higher_better:
@@ -95,6 +109,8 @@ class FakeEnv:
                 action=Action(type=ActionType.RUN, content="run current baseline"),
                 result=f"val {metric}={val_scores[0]:.4f}",
                 val_score=val_scores[0],
+                model_name="RandomForestClassifier",
+                hyperparams={"n_estimators": 100, "max_depth": 10},
                 tokens_used=self._tokens(70, 130),
             ),
             Step(
@@ -114,6 +130,8 @@ class FakeEnv:
                 action=Action(type=ActionType.RUN, content="run improved solution"),
                 result=f"val {metric}={val_scores[1]:.4f}",
                 val_score=val_scores[1],
+                model_name="XGBClassifier",
+                hyperparams={"n_estimators": 200, "max_depth": 6, "learning_rate": 0.1},
                 tokens_used=self._tokens(75, 135),
             ),
             Step(

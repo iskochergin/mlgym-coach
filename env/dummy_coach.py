@@ -12,5 +12,5 @@ from core.types import Hint, Observation
 class DummyCoach:
     """Молчаливый коуч-заглушка. Покрытие 0, подсказок нет."""
 
-    def assess(self, obs: Observation) -> tuple[float, list[Hint]]:
-        return 0.0, []
+    def assess(self, obs: Observation) -> tuple[float, dict[str, float], list[Hint]]:
+        return 0.0, {}, []

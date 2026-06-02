@@ -72,6 +72,8 @@ class Step:
     action: Action
     result: str                 # что вернула среда (stdout / ошибка / метрика)
     val_score: Optional[float] = None
+    model_name: Optional[str] = None
+    hyperparams: dict[str, Any] = field(default_factory=dict)
     tokens_used: int = 0
     hints: list[Hint] = field(default_factory=list)
 
@@ -98,6 +100,7 @@ class EpisodeResult:
     steps: list[Step] = field(default_factory=list)
     final_test_score: Optional[float] = None
     checklist_coverage: float = 0.0   # 0..1, заполняет Coach
+    stage_coverage: dict[str, float] = field(default_factory=dict)
     total_tokens: int = 0
     config: dict[str, Any] = field(default_factory=dict)
 
@@ -117,6 +120,7 @@ class EpisodeResult:
             steps=[_step_from_dict(x) for x in d.get("steps", [])],
             final_test_score=d.get("final_test_score"),
             checklist_coverage=d.get("checklist_coverage", 0.0),
+            stage_coverage=d.get("stage_coverage", {}),
             total_tokens=d.get("total_tokens", 0),
             config=d.get("config", {}),
         )
@@ -133,6 +137,8 @@ def _step_from_dict(d: dict[str, Any]) -> Step:
         action=Action(type=ActionType(d["action"]["type"]), content=d["action"]["content"]),
         result=d["result"],
         val_score=d.get("val_score"),
+        model_name=d.get("model_name"),
+        hyperparams=d.get("hyperparams", {}),
         tokens_used=d.get("tokens_used", 0),
         hints=[_hint_from_dict(h) for h in d.get("hints", [])],
     )

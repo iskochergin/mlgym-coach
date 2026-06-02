@@ -166,8 +166,13 @@ class Coach:
                 completed.add(item_id)
         return completed
 
-    def assess(self, obs: Observation) -> tuple[float, list[Hint]]:
+    def assess(self, obs: Observation) -> tuple[float, dict[str, float], list[Hint]]:
         completed_items = self._detect_completed_items(obs)
+
+        stage_coverage = {}
+        for stage, items in self.CHECKLIST.items():
+            completed_in_stage = [it for it in items if it in completed_items]
+            stage_coverage[stage.value] = len(completed_in_stage) / len(items) if items else 0.0
 
         total_items_list = []
         for stage_items in self.CHECKLIST.values():
@@ -204,4 +209,4 @@ class Coach:
                 text=text
             ))
 
-        return coverage, hints
+        return coverage, stage_coverage, hints

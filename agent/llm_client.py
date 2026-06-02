@@ -25,6 +25,16 @@ class LLMConfig:
 
     @staticmethod
     def from_env() -> "LLMConfig":
+        llm_type = os.environ.get("MLGYM_LLM", "chatgpt").lower()
+        
+        if llm_type == "deepseek":
+            return LLMConfig(
+                model=os.environ.get("DEEPSEEK_MODEL", "deepseek-chat"),
+                base_url=os.environ.get("DEEPSEEK_BASE_URL", "https://api.deepseek.com").rstrip("/"),
+                api_key=os.environ.get("DEEPSEEK_API_KEY"),
+            )
+        
+        # Default to ChatGPT / OpenAI-compatible
         return LLMConfig(
             model=os.environ.get("OPENAI_MODEL", "gpt-4o-mini"),
             base_url=os.environ.get("OPENAI_BASE_URL", "https://api.openai.com/v1").rstrip("/"),
@@ -33,9 +43,15 @@ class LLMConfig:
 
 
 def use_mock() -> bool:
-    """Mock включён явно (MLGYM_LLM=mock) или когда нет API-ключа."""
-    if os.environ.get("MLGYM_LLM", "").lower() == "mock":
+    """Mock включён явно (MLGYM_LLM=mock) или когда нет API-ключа для выбранного провайдера."""
+    llm_type = os.environ.get("MLGYM_LLM", "chatgpt").lower()
+    if llm_type == "mock":
         return True
+    
+    if llm_type == "deepseek":
+        return not os.environ.get("DEEPSEEK_API_KEY")
+    
+    # По умолчанию проверяем OpenAI-совместимый ключ
     return not os.environ.get("OPENAI_API_KEY")
 
 

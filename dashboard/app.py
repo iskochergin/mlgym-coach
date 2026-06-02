@@ -433,7 +433,7 @@ def page_run_experiment(tasks: list[dict]) -> None:
         seeds = c4.number_input("Число сидов", min_value=1, max_value=20, value=3)
         budget = c5.number_input("Токен-бюджет", min_value=500, max_value=50000, value=8000, step=500)
         hint_level = c6.selectbox("Уровень подсказок", ["L1", "L2", "L3"])  # пока в config для runner metadata
-        llm_mode = c7.selectbox("Режим LLM", ["mock", "real"], index=0)
+        llm_provider = c7.selectbox("Провайдер LLM", ["Mock", "ChatGPT", "DeepSeek"], index=0)
         max_steps = st.number_input("Максимум шагов", min_value=2, max_value=50, value=6)
 
         submitted = st.form_submit_button("Запустить", use_container_width=True)
@@ -445,7 +445,7 @@ def page_run_experiment(tasks: list[dict]) -> None:
             config = {
                 "experiment_name": experiment_name,
                 "model": model,
-                "env": "fake" if llm_mode == "mock" else "real",
+                "env": "fake" if llm_provider == "Mock" else "real",
                 "agents": [agent],
                 "seeds": list(range(int(seeds))),
                 "tasks": [task_specs[task_id]["spec_path"]],
@@ -454,7 +454,7 @@ def page_run_experiment(tasks: list[dict]) -> None:
                 "output_dir": "runs",
                 # runner игнорирует неизвестные поля; оставляем для дебага/аудита.
                 "hint_level": hint_level,
-                "llm_mode": llm_mode,
+                "llm_provider": llm_provider,
             }
 
             RUNNER_CONFIGS_DIR.mkdir(parents=True, exist_ok=True)
@@ -465,10 +465,17 @@ def page_run_experiment(tasks: list[dict]) -> None:
             output_dir = RUNS_DIR / experiment_name
             output_dir.mkdir(parents=True, exist_ok=True)
             log_path = output_dir / "runner.log"
-            python_bin = _REPO_ROOT / ".venv" / "bin" / "python"
+            # python_bin = _REPO_ROOT / ".venv" / "bin" / "python"
+            python_bin = sys.executable
             cmd = [str(python_bin), "-m", "runner.run", "--config", str(cfg_abs)]
             env = os.environ.copy()
-            env["MLGYM_LLM"] = llm_mode
+            
+            provider_map = {
+                "Mock": "mock",
+                "ChatGPT": "chatgpt",
+                "DeepSeek": "deepseek"
+            }
+            env["MLGYM_LLM"] = provider_map.get(llm_provider, "mock")
 
             with log_path.open("a", encoding="utf-8") as log_file:
                 proc = subprocess.Popen(  # noqa: S603
@@ -488,8 +495,9 @@ def page_run_experiment(tasks: list[dict]) -> None:
                 "model": model,
                 "seeds": int(seeds),
                 "budget_tokens": int(budget),
+                "max_steps": int(max_steps),
                 "hint_level": hint_level,
-                "llm_mode": llm_mode,
+                "llm_provider": llm_provider,
                 "config_path": str(cfg_rel),
                 "output_dir": str(output_dir.relative_to(_REPO_ROOT)),
                 "log_path": str(log_path.relative_to(_REPO_ROOT)),
@@ -525,6 +533,109 @@ def page_run_experiment(tasks: list[dict]) -> None:
         st.subheader("История запусков")
         st.dataframe(pd.DataFrame(st.session_state.launches), use_container_width=True, hide_index=True)
         st.button("Обновить статусы", use_container_width=True)
+
+        st.divider()
+        st.subheader("Experiment Progress")
+        for launch in st.session_state.launches:
+            if launch["status"] == "running" or launch.get("show_progress", False):
+                render_launch_progress(launch)
+
+
+def render_launch_progress(launch: dict) -> None:
+    output_dir = _REPO_ROOT / launch["output_dir"]
+    run_files = list(output_dir.rglob("seed_*.json"))
+    
+    st.write(f"#### {launch['experiment_name']} ({launch['agent']})")
+    
+    if not run_files:
+        st.info("Ожидание результатов...")
+        return
+
+    cols = st.columns(len(run_files))
+    for i, run_file in enumerate(sorted(run_files)):
+        try:
+            data = json.loads(run_file.read_text(encoding="utf-8"))
+            ep = EpisodeResult.from_dict(data)
+        except Exception as e:
+            st.error(f"Ошибка загрузки {run_file.name}: {e}")
+            continue
+            
+        with cols[i]:
+            st.write(f"**Seed {ep.seed}**")
+            
+            # 1. Current Stage Progress
+            st.write("**Current Stage**")
+            current_stage = ep.steps[-1].stage if ep.steps else Stage.EDA
+            for stage in Stage:
+                if any(s.stage == stage for s in ep.steps) and stage != current_stage:
+                    st.write(f"✓ {stage.value.upper()}")
+                elif stage == current_stage:
+                    if launch["status"] == "running":
+                        st.write(f"▶ **{stage.value.upper()}**")
+                    else:
+                        st.write(f"✓ {stage.value.upper()}")
+                else:
+                    st.write(f"○ {stage.value.upper()}")
+            
+            status_map = {"running": "🔵 Running", "completed": "🟢 Complete", "failed": "🔴 Fail"}
+            st.write(f"Status: {status_map.get(launch['status'], launch['status'])}")
+            
+            # 2. Checklist Coverage
+            st.write("**Checklist Coverage**")
+            for stage in Stage:
+                cov = ep.stage_coverage.get(stage.value, 0.0)
+                col_a, col_b = st.columns([1, 3])
+                col_a.caption(stage.value.upper())
+                col_b.progress(cov)
+                st.caption(f"{cov:.0%}")
+            
+            # 3. Token Budget Progress
+            st.write("**Tokens Used**")
+            limit = launch.get("budget_tokens", 8000)
+            used = ep.total_tokens
+            percent_tokens = min(1.0, used / limit) if limit > 0 else 0.0
+            st.write(f"{used:,} / {limit:,}")
+            st.progress(percent_tokens)
+            st.caption(f"{percent_tokens:.0%}")
+            
+            # 4. Step Progress
+            st.write("**Steps**")
+            max_steps = launch.get("max_steps", 6)
+            current_steps = len(ep.steps)
+            percent_steps = min(1.0, current_steps / max_steps) if max_steps > 0 else 0.0
+            st.write(f"{current_steps} / {max_steps}")
+            st.progress(percent_steps)
+            st.caption(f"{percent_steps:.0%}")
+            
+            # 5. Best Validation Score
+            st.write("**Best Validation Score**")
+            best_score = None
+            best_step = None
+            higher_better = ep.config.get("metric_higher_better", True)
+            
+            for step in ep.steps:
+                if step.val_score is not None:
+                    if best_score is None:
+                        best_score = step.val_score
+                        best_step = step
+                    elif higher_better and step.val_score > best_score:
+                        best_score = step.val_score
+                        best_step = step
+                    elif not higher_better and step.val_score < best_score:
+                        best_score = step.val_score
+                        best_step = step
+            
+            if best_score is not None:
+                st.metric("Score", f"{best_score:.4f}")
+                st.write(f"Model: {best_step.model_name or 'N/A'}")
+                if best_step.hyperparams:
+                    st.caption("Hyperparameters:")
+                    st.json(best_step.hyperparams)
+                else:
+                    st.caption("Hyperparameters: N/A")
+            else:
+                st.write("N/A")
+    st.divider()
 
 
 def page_runs_list(df: pd.DataFrame) -> None:

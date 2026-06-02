@@ -52,3 +52,9 @@ Thumbs.db
 .idea/
 .vscode/
 *.swp
+
+
+# Docker
+
+Dockerfile
+docker-compose.yaml

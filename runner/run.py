@@ -3,7 +3,7 @@ from __future__ import annotations
 import argparse
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable, Optional
 
 import yaml
 
@@ -46,10 +46,14 @@ def run_experiment(config: dict[str, Any]) -> list[Path]:
     for loaded_task in loaded_tasks:
         for agent in agents:
             for seed in seeds:
-                result = _run_one(loaded_task, agent, seed, env_name, fake_config)
                 path = output_root / loaded_task.task.id / agent / f"seed_{seed}.json"
                 path.parent.mkdir(parents=True, exist_ok=True)
-                path.write_text(result.to_json(), encoding="utf-8")
+
+                def _on_step(res: EpisodeResult, p=path):
+                    p.write_text(res.to_json(), encoding="utf-8")
+
+                result = _run_one(loaded_task, agent, seed, env_name, fake_config, on_step=_on_step)
+                _on_step(result)
                 written.append(path)
     return written
 
@@ -60,6 +64,7 @@ def _run_one(
     seed: int,
     env_name: str,
     config: FakeEnvConfig,
+    on_step: Optional[Callable[[EpisodeResult], None]] = None,
 ) -> EpisodeResult:
     env = build_env(
         env_name=env_name,
@@ -68,7 +73,7 @@ def _run_one(
         seed=seed,
         config=config,
     )
-    return env.run()
+    return env.run(on_step=on_step)
 
 
 def _load_config(path: Path) -> dict[str, Any]:

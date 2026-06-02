@@ -24,7 +24,7 @@ from env.executor import run_solution
 
 
 class _CoachLike(Protocol):
-    def assess(self, obs: Observation) -> tuple[float, list[Hint]]: ...
+    def assess(self, obs: Observation) -> tuple[float, dict[str, float], list[Hint]]: ...
 
 
 class Env:
@@ -54,6 +54,7 @@ class Env:
         self._last_result: Optional[str] = None
         self._final_test_score: Optional[float] = None
         self._last_coverage: float = 0.0
+        self._stage_coverage: dict[str, float] = {}
         self._has_run: bool = False
         self._current_code: str = ""  # последний принятый CODE — его исполняют RUN/SUBMIT
 
@@ -67,6 +68,7 @@ class Env:
         self._last_result = None
         self._final_test_score = None
         self._last_coverage = 0.0
+        self._stage_coverage = {}
         self._has_run = False
         self._current_code = ""
         return Observation(
@@ -115,11 +117,14 @@ class Env:
             tokens_left=self._tokens_left,
             hints=[],
         )
-        coverage, hints = self.coach.assess(obs)
+        coverage, stage_coverage, hints = self.coach.assess(obs)
         self._last_coverage = coverage
 
         step.hints = list(hints)
         obs.hints = list(hints)
+
+        self._last_coverage = coverage
+        self._stage_coverage = stage_coverage
 
         self._history.append(step)
         return obs
@@ -133,6 +138,7 @@ class Env:
             steps=list(self._history),
             final_test_score=self._final_test_score,
             checklist_coverage=self._last_coverage,
+            stage_coverage=self._stage_coverage,
             total_tokens=total_tokens,
             config={
                 "token_budget": self.token_budget,
