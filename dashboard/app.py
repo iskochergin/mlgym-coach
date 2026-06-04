@@ -26,7 +26,8 @@ if str(_REPO_ROOT) not in sys.path:
 
 from core.types import EpisodeResult, Stage  # noqa: E402
 from dashboard.i18n import LANG_OPTIONS, tr  # noqa: E402
-from dashboard.product_flow import page_product_flow  # noqa: E402
+from dashboard.product_flow import page_product_flow, load_partial_episode  # noqa: E402
+from dashboard.progress_utils import get_stage_coverage, get_best_run_info # noqa: E402
 
 EXAMPLES_DIR = _REPO_ROOT / "examples"
 REPORTS_DIR = _REPO_ROOT / "reports"
@@ -529,9 +530,114 @@ def page_run_experiment(tasks: list[dict]) -> None:
             else:
                 launch["status"] = "completed" if run_files else "failed"
 
+        # --- Experiment Progress Section ---
+        st.subheader("Experiment Progress")
+        for launch in st.session_state.launches:
+            if launch["status"] != "running" and launch.get("result_files", 0) == 0:
+                 continue
+            
+            exp_name = launch["experiment_name"]
+            status = launch["status"]
+            
+            status_emoji = "▶️" if status == "running" else "✅" if status == "completed" else "❌"
+            with st.expander(f"{status_emoji} Experiment: {exp_name} ({status})", expanded=(status == "running")):
+                output_dir = _REPO_ROOT / launch["output_dir"]
+                # Находим все папки агентов внутри эксперимента
+                agent_dirs = []
+                if output_dir.exists():
+                    # Структура: output_dir / task_id / seedX / agent_name
+                    agent_dirs = [d for d in output_dir.rglob("*") if d.is_dir() and (d / "episode.json").exists() or (d / "episode.partial.json").exists()]
+
+                if not agent_dirs:
+                    st.info(f"Waiting for agents to start in {exp_name}...")
+                    continue
+
+                # Отображаем прогресс для каждого агента
+                for adir in sorted(agent_dirs):
+                    agent_name = adir.name
+                    seed = adir.parent.name
+                    st.markdown(f"#### Agent: {agent_name} ({seed})")
+                    
+                    ep = load_partial_episode(adir)
+                    if not ep:
+                        st.write("Loading agent data...")
+                        continue
+                    
+                    col_left, col_right = st.columns([1, 1])
+                    
+                    with col_left:
+                        # 1. Current Stage Progress
+                        st.markdown("**Current Stage Progress**")
+                        current_stage = ep.steps[-1].stage if ep.steps else Stage.EDA
+                        
+                        # Статус агента
+                        agent_status = launch["status"] # Упрощенно берем статус всего ланча
+                        status_icon = "▶" if agent_status == "running" else ("✓" if agent_status == "completed" else "✗")
+                        st.markdown(f"Status: {status_icon} {agent_status}")
+
+                        for stage in STAGES_ORDER:
+                            if stage == current_stage:
+                                prefix = "▶" if agent_status == "running" else "✓"
+                                label = f"**{prefix} {STAGE_LABELS[stage]}**"
+                            elif STAGES_ORDER.index(stage) < STAGES_ORDER.index(current_stage):
+                                label = f"✓ {STAGE_LABELS[stage]}"
+                            else:
+                                label = f"○ {STAGE_LABELS[stage]}"
+                            st.markdown(label)
+
+                        # 5. Best Validation Score
+                        st.markdown("---")
+                        st.markdown("**Best Validation Score**")
+                        metric_higher_better = ep.config.get("metric_higher_better", True)
+                        best_info = get_best_run_info(ep.steps, metric_higher_better)
+                        
+                        if best_info["best_score"] is not None:
+                            st.metric("Score", f"{best_info['best_score']:.4f}")
+                            st.text(f"Model:\n{best_info['model']}")
+                            st.text(f"Hyperparameters:\n{best_info['hyperparameters']}")
+                        else:
+                            st.write("N/A")
+
+                    with col_right:
+                        # 2. Checklist Coverage
+                        st.markdown("**Checklist Coverage**")
+                        coverage = get_stage_coverage(ep.steps)
+                        for stage in STAGES_ORDER:
+                            c_val = coverage.get(stage.value, 0.0)
+                            st.write(f"{STAGE_LABELS[stage]}")
+                            st.progress(c_val)
+                            st.caption(f"{c_val:.0%}")
+
+                        # 3. Token Budget Progress
+                        st.markdown("---")
+                        st.markdown("**Token Budget Progress**")
+                        limit = ep.config.get("budget_tokens", launch["budget_tokens"])
+                        used = ep.total_tokens or sum(s.tokens_used for s in ep.steps)
+                        pct_tokens = min(used / limit, 1.0) if limit > 0 else 0
+                        st.write(f"Tokens Used: {used:,} / {limit:,}")
+                        st.progress(pct_tokens)
+                        st.caption(f"{pct_tokens:.0%}")
+
+                        # 4. Step Progress
+                        st.markdown("**Step Progress**")
+                        max_s = ep.config.get("max_steps", 6)
+                        curr_s = len(ep.steps)
+                        pct_steps = min(curr_s / max_s, 1.0) if max_s > 0 else 0
+                        st.write(f"Steps: {curr_s} / {max_s}")
+                        st.progress(pct_steps)
+                        st.caption(f"{pct_steps:.0%}")
+                    
+                    st.markdown("---")
+
         st.subheader(tr(lang, "runexp.history"))
         st.dataframe(pd.DataFrame(st.session_state.launches), use_container_width=True, hide_index=True)
         st.button(tr(lang, "runexp.refresh"), use_container_width=True)
+        # Auto-refresh if there are running launches
+        has_running = any(l["status"] == "running" for l in st.session_state.launches)
+        if has_running:
+            import time
+            time.sleep(2)
+            st.rerun()
 
 
 def page_runs_list(df: pd.DataFrame) -> None:
