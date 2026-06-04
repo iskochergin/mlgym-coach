@@ -297,6 +297,6 @@ def run_status(run_dir: Path) -> str:
         return "completed"
     if is_process_running(pid):
         return "running"
-    if partial.exists() or list(run_dir.rglob("seed_*.json")):
+    if partial.exists() or list(run_dir.rglob("episode.json")):
         return "completed"
     return "failed"

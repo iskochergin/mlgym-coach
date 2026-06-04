@@ -56,8 +56,8 @@ def load_partial_episode(run_dir: Path) -> Optional[EpisodeResult]:
         except (json.JSONDecodeError, KeyError, ValueError):
             return None
 
-    # Fallback: первый готовый seed_*.json (пока Ваня не пишет partial).
-    seed_files = sorted(run_dir.rglob("seed_*.json"))
+    # Fallback: первый готовый episode.json (пока Ваня не пишет partial).
+    seed_files = sorted(run_dir.rglob("episode.json"))
     if seed_files:
         try:
             return EpisodeResult.from_json(seed_files[0].read_text(encoding="utf-8"))
@@ -74,7 +74,7 @@ def load_final_episode(run_dir: Path) -> Optional[EpisodeResult]:
         except (json.JSONDecodeError, KeyError, ValueError):
             pass
 
-    seed_files = sorted(run_dir.rglob("seed_*.json"))
+    seed_files = sorted(run_dir.rglob("episode.json"))
     if not seed_files:
         return None
     try:

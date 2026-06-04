@@ -87,7 +87,7 @@ def load_episodes_with_meta() -> list[dict]:
                 }
             )
     if RUNS_DIR.exists():
-        for path in sorted(RUNS_DIR.rglob("seed_*.json")):
+        for path in sorted(RUNS_DIR.rglob("episode.json")):
             if "_dashboard_configs" in path.parts:
                 continue
             ep = EpisodeResult.from_json(path.read_text(encoding="utf-8"))
@@ -510,7 +510,7 @@ def page_run_experiment(tasks: list[dict]) -> None:
         for launch in st.session_state.launches:
             pid = launch.get("pid")
             output_dir = _REPO_ROOT / launch["output_dir"]
-            run_files = list(output_dir.rglob("seed_*.json")) if output_dir.exists() else []
+            run_files = list(output_dir.rglob("episode.json")) if output_dir.exists() else []
             launch["result_files"] = len(run_files)
 
             if launch["status"] in {"completed", "failed"}:
