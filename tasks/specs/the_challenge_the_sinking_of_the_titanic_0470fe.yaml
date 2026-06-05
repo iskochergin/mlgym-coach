@@ -1,0 +1,39 @@
+id: the_challenge_the_sinking_of_the_titanic_0470fe
+description: "The Challenge\n\nThe sinking of the Titanic is one of the most infamous\
+  \ shipwrecks in history.\n\nOn April 15, 1912, during her maiden voyage, the widely\
+  \ considered “unsinkable” RMS Titanic sank after colliding with an iceberg. Unfortunately,\
+  \ there weren’t enough lifeboats for everyone onboard, resulting in the death of\
+  \ 1502 out of 2224 passengers and crew.\n\nWhile there was some element of luck\
+  \ involved in surviving, it seems some groups of people were more likely to survive\
+  \ than others.\n\nIn this challenge, we ask you to build a predictive model that\
+  \ answers the question: “what sorts of people were more likely to survive?” using\
+  \ passenger data (ie name, age, gender, socio-economic class, etc).\n\nOverview\n\
+  \nThe data has been split into two groups:\n\ntraining set (train.csv)\ntest set\
+  \ (test.csv)\nThe training set should be used to build your machine learning models.\
+  \ For the training set, we provide the outcome (also known as the “ground truth”)\
+  \ for each passenger. Your model will be based on “features” like passengers’ gender\
+  \ and class. You can also use feature engineering to create new features.\n\nThe\
+  \ test set should be used to see how well your model performs on unseen data. For\
+  \ the test set, we do not provide the ground truth for each passenger. It is your\
+  \ job to predict these outcomes. For each passenger in the test set, use the model\
+  \ you trained to predict whether or not they survived the sinking of the Titanic.\n\
+  \nWe also include gender_submission.csv, a set of predictions that assume all and\
+  \ only female passengers survive, as an example of what a submission file should\
+  \ look like.\n\nData Dictionary\n\nVariable\tDefinition\tKey\nsurvival\tSurvival\t\
+  0 = No, 1 = Yes\npclass\tTicket class\t1 = 1st, 2 = 2nd, 3 = 3rd\nsex\tSex\t\nAge\t\
+  Age in years\t\nsibsp\t# of siblings / spouses aboard the Titanic\t\nparch\t# of\
+  \ parents / children aboard the Titanic\t\nticket\tTicket number\t\nfare\tPassenger\
+  \ fare\t\ncabin\tCabin number\t\nembarked\tPort of Embarkation\tC = Cherbourg, Q\
+  \ = Queenstown, S = Southampton\nVariable Notes\n\npclass: A proxy for socio-economic\
+  \ status (SES)\n1st = Upper\n2nd = Middle\n3rd = Lower\n\nage: Age is fractional\
+  \ if less than 1. If the age is estimated, is it in the form of xx.5\n\nsibsp: The\
+  \ dataset defines family relations in this way...\nSibling = brother, sister, stepbrother,\
+  \ stepsister\nSpouse = husband, wife (mistresses and fiancés were ignored)\n\nparch:\
+  \ The dataset defines family relations in this way...\nParent = mother, father\n\
+  Child = daughter, son, stepdaughter, stepson\nSome children travelled only with\
+  \ a nanny, therefore parch=0 for them."
+metric: accuracy
+metric_higher_better: true
+train_path: tasks/data/the_challenge_the_sinking_of_the_titanic_0470fe/train.csv
+test_features_path: tasks/data/the_challenge_the_sinking_of_the_titanic_0470fe/test_features.csv
+hidden_labels_path: tasks/hidden_labels/the_challenge_the_sinking_of_the_titanic_0470fe/y_test.csv
