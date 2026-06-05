@@ -30,7 +30,7 @@ STAGE_LABELS = {
     Stage.IMPROVE: "Improve",
     Stage.SUBMIT: "Submit",
 }
-METRIC_OPTIONS = ["roc_auc", "accuracy", "f1", "rmse", "mae"]
+METRIC_OPTIONS = ["roc_auc", "rmse"]
 HINT_COLORS = {1: ("#e0f2fe", "#0284c7"), 2: ("#fff7ed", "#ea580c"), 3: ("#fef2f2", "#dc2626")}
 
 
