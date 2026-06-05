@@ -438,10 +438,10 @@ def page_run_experiment(tasks: list[dict]) -> None:
         model = col3.text_input(tr(lang, "runexp.model"), value="fake-model")
 
         c4, c5, c6, c7 = st.columns(4)
-        seeds = c4.number_input(tr(lang, "runexp.seeds"), min_value=1, max_value=20, value=3)
+        seeds = c4.number_input(tr(lang, "runexp.seeds"), min_value=1, max_value=20, value=1)
         budget = c5.number_input(tr(lang, "runexp.token_budget"), min_value=500, max_value=50000, value=8000, step=500)
         hint_level = c6.selectbox(tr(lang, "runexp.hint_level"), ["L1", "L2", "L3"])
-        llm_mode = c7.selectbox(tr(lang, "runexp.llm_mode"), ["mock", "real"], index=0)
+        llm_mode = c7.selectbox(tr(lang, "runexp.llm_mode"), ["mock", "ChatGPT", "DeepSeek"], index=0)
         max_steps = st.number_input(tr(lang, "runexp.max_steps"), min_value=2, max_value=50, value=6)
 
         submitted = st.form_submit_button(tr(lang, "runexp.submit"), use_container_width=True)
@@ -450,10 +450,17 @@ def page_run_experiment(tasks: list[dict]) -> None:
             run_id = f"{task_id}-{agent}-{ts}-{uuid4().hex[:6]}"
             experiment_name = f"dashboard-{run_id}"
 
+            # Преобразуем UI названия в значения для env
+            env_llm = "mock"
+            if llm_mode == "ChatGPT":
+                env_llm = "openai"
+            elif llm_mode == "DeepSeek":
+                env_llm = "deepseek"
+
             config = {
                 "experiment_name": experiment_name,
                 "model": model,
-                "env": "fake" if llm_mode == "mock" else "real",
+                "env": "fake" if env_llm == "mock" else "real",
                 "agents": [agent],
                 "seeds": list(range(int(seeds))),
                 "tasks": [task_specs[task_id]["spec_path"]],
@@ -462,7 +469,7 @@ def page_run_experiment(tasks: list[dict]) -> None:
                 "output_dir": "runs",
                 # runner игнорирует неизвестные поля; оставляем для дебага/аудита.
                 "hint_level": hint_level,
-                "llm_mode": llm_mode,
+                "llm_mode": env_llm,
             }
 
             RUNNER_CONFIGS_DIR.mkdir(parents=True, exist_ok=True)
@@ -476,7 +483,7 @@ def page_run_experiment(tasks: list[dict]) -> None:
             python_bin = _REPO_ROOT / ".venv" / "bin" / "python"
             cmd = [str(python_bin), "-m", "runner.run", "--config", str(cfg_abs)]
             env = os.environ.copy()
-            env["MLGYM_LLM"] = llm_mode
+            env["MLGYM_LLM"] = env_llm
 
             with log_path.open("a", encoding="utf-8") as log_file:
                 proc = subprocess.Popen(  # noqa: S603
@@ -549,6 +556,7 @@ def page_run_experiment(tasks: list[dict]) -> None:
                     agent_dirs = [d for d in output_dir.rglob("*") if d.is_dir() and (d / "episode.json").exists() or (d / "episode.partial.json").exists()]
 
                 if not agent_dirs:
+                    print('Code was here')
                     st.info(f"Waiting for agents to start in {exp_name}...")
                     continue
 

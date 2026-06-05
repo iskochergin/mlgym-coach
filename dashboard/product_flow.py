@@ -266,7 +266,11 @@ def _render_create_form() -> None:
             type=["csv"],
         )
 
-        llm_mode = st.selectbox("Режим LLM" if lang == "ru" else ("LLM mode" if lang == "en" else "LLM ռեժիմ"), ["mock", "real"], index=0)
+        llm_mode = st.selectbox(
+            "Режим LLM" if lang == "ru" else ("LLM mode" if lang == "en" else "LLM ռեժիմ"),
+            ["mock", "ChatGPT", "DeepSeek"],
+            index=0
+        )
 
         submitted = st.form_submit_button(tr(lang, "runexp.submit"), type="primary", use_container_width=True)
 

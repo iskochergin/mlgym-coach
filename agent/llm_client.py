@@ -28,6 +28,9 @@ _PLACEHOLDER_KEY = "sk-REPLACE-ME"
 _DEFAULT_MODEL = "gpt-5-mini"
 _DEFAULT_BASE_URL = "https://api.openai.com/v1"
 
+_DEEPSEEK_DEFAULT_MODEL = "deepseek-chat"
+_DEEPSEEK_DEFAULT_BASE_URL = "https://api.deepseek.com"
+
 # Чтобы лог выбора клиента печатался один раз за процесс.
 _startup_logged = False
 
@@ -41,6 +44,15 @@ class LLMConfig:
 
     @staticmethod
     def from_env() -> "LLMConfig":
+        mode = os.environ.get("MLGYM_LLM", "").lower()
+        if mode == "deepseek":
+            base = os.environ.get("DEEPSEEK_BASE_URL") or _DEEPSEEK_DEFAULT_BASE_URL
+            return LLMConfig(
+                model=os.environ.get("DEEPSEEK_MODEL") or _DEEPSEEK_DEFAULT_MODEL,
+                base_url=base.rstrip("/"),
+                api_key=os.environ.get("DEEPSEEK_API_KEY"),
+            )
+        # OpenAI (default)
         base = os.environ.get("OPENAI_BASE_URL")
         return LLMConfig(
             model=os.environ.get("OPENAI_MODEL") or _DEFAULT_MODEL,
@@ -50,9 +62,14 @@ class LLMConfig:
 
 
 def use_mock() -> bool:
-    """MockLLM если: MLGYM_LLM=mock, либо ключа нет, либо ключ-плейсхолдер."""
-    if os.environ.get("MLGYM_LLM", "").lower() == "mock":
+    """MockLLM если: MLGYM_LLM=mock, либо ключа нет для выбранного провайдера."""
+    mode = os.environ.get("MLGYM_LLM", "").lower()
+    if mode == "mock":
         return True
+    if mode == "deepseek":
+        api_key = os.environ.get("DEEPSEEK_API_KEY")
+        return (not api_key) or api_key == "sk-REPLACE-ME"
+    # По умолчанию считаем openai
     api_key = os.environ.get("OPENAI_API_KEY")
     return (not api_key) or api_key == _PLACEHOLDER_KEY
 
@@ -164,11 +181,12 @@ def build_client(config: Optional[LLMConfig] = None):
         return MockLLM()
 
     cfg = config or LLMConfig.from_env()
+    mode = os.environ.get("MLGYM_LLM", "").lower() or "openai"
     try:
         client = OpenAIClient(cfg)
     except Exception as e:  # напр. openai SDK не установлен
         _log_once(f"openai SDK недоступен ({e!r}); фолбэк на MockLLM")
         return MockLLM()
 
-    _log_once(f"клиент=OpenAI, модель={cfg.model}, base_url={cfg.base_url or _DEFAULT_BASE_URL}")
+    _log_once(f"клиент={mode.upper() if mode != 'openai' else 'OpenAI'}, модель={cfg.model}, base_url={cfg.base_url or _DEFAULT_BASE_URL}")
     return client

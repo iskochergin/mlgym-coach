@@ -180,6 +180,15 @@ def _submit_run_local(**kwargs: Any) -> RunLaunch:
     model = str(kwargs["model"])
     max_steps = int(kwargs["max_steps"])
 
+    # Преобразуем UI названия в значения для env
+    env_llm = "mock"
+    if llm_mode == "ChatGPT":
+        env_llm = "openai"
+    elif llm_mode == "DeepSeek":
+        env_llm = "deepseek"
+    else:
+        env_llm = llm_mode  # на случай если уже пришло "mock", "openai" или "deepseek"
+
     task_id = slugify_task_id(description)
     run_id = f"run-{datetime.now().strftime('%Y%m%d-%H%M%S')}-{uuid4().hex[:6]}"
     run_dir = RUNS_DIR / run_id
@@ -214,14 +223,14 @@ def _submit_run_local(**kwargs: Any) -> RunLaunch:
     config = {
         "experiment_name": run_id,
         "model": model,
-        "env": "fake" if llm_mode == "mock" else "real",
+        "env": "fake" if env_llm == "mock" else "real",
         "agents": [agent],
         "seeds": list(range(seeds)),
         "tasks": [str(spec_path.relative_to(_REPO_ROOT))],
         "token_budget": token_budget,
         "max_steps": max_steps,
         "output_dir": "runs",
-        "llm_mode": llm_mode,
+        "llm_mode": env_llm,
     }
 
     RUNNER_CONFIGS_DIR.mkdir(parents=True, exist_ok=True)
@@ -234,7 +243,7 @@ def _submit_run_local(**kwargs: Any) -> RunLaunch:
         python_bin = Path(sys.executable)
 
     env = os.environ.copy()
-    env["MLGYM_LLM"] = llm_mode
+    env["MLGYM_LLM"] = env_llm
     env["MLGYM_RUN_DIR"] = str(run_dir)
 
     with log_path.open("a", encoding="utf-8") as log_file:
@@ -253,7 +262,7 @@ def _submit_run_local(**kwargs: Any) -> RunLaunch:
         "metric": metric,
         "seeds": seeds,
         "token_budget": token_budget,
-        "llm_mode": llm_mode,
+        "llm_mode": env_llm,
         "pid": proc.pid,
         "status": "running",
         "config_path": str(cfg_path.relative_to(_REPO_ROOT)),
