@@ -657,6 +657,27 @@ def apply_theme(dark_mode: bool) -> None:
         f"""
         <style>
         .stApp {{ background: {bg}; color: {text}; }}
+        header[data-testid="stHeader"],
+        [data-testid="stHeader"],
+        [data-testid="stToolbar"],
+        [data-testid="stDecoration"],
+        [data-testid="stStatusWidget"],
+        [data-testid="stAppViewContainer"] > .main {{
+            background: {bg} !important;
+            color: {text} !important;
+        }}
+        header[data-testid="stHeader"]::before,
+        header[data-testid="stHeader"]::after,
+        [data-testid="stHeader"]::before,
+        [data-testid="stHeader"]::after {{
+            background: {bg} !important;
+        }}
+        [data-testid="stToolbar"] button,
+        [data-testid="stToolbar"] svg,
+        [data-testid="stStatusWidget"] svg {{
+            color: {text} !important;
+            fill: {text} !important;
+        }}
         section[data-testid="stSidebar"] {{ background: {panel}; }}
         .stApp h1, .stApp h2, .stApp h3, .stApp h4, .stApp p, .stApp span,
         .stApp label, .stApp [data-testid="stWidgetLabel"] p,
