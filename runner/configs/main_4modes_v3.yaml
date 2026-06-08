@@ -1,0 +1,28 @@
+# 4 режима × 6 задач × 3 сида × M моделей = 72 эпизода на модель
+# Полный challenge (по 3 моделям gpt-5-mini, gpt-4o-mini, gpt-5-nano):
+#   72 × 3 = 216 эпизодов.
+# Запуск: см. scripts/run_4modes_v3.py
+experiment_name: main_4modes_v3
+env: real
+model: gpt-5-mini
+modes:
+  - single_shot
+  - repeated_single_shot
+  - fixed
+  - flexible
+seeds: [0, 1, 2]
+tasks:
+  - tasks/specs/titanic_survival.yaml
+  - tasks/specs/california_housing.yaml
+  - tasks/specs/adult_income.yaml
+  - tasks/specs/wine_quality.yaml
+  - tasks/specs/credit_g.yaml
+  - tasks/specs/bank_marketing.yaml
+token_budget: 30000
+max_steps: 18
+output_dir: runs
+notes: |
+  single_shot и repeated_single_shot не используют Coach. Stage policy
+  применяется только к fixed/flexible.
+  Запуск через scripts/run_4modes_v3.py (orchestrator принимает --tag
+  для разделения папок между моделями).
