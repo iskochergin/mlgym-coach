@@ -1,0 +1,10 @@
+id: adult_income
+description: >
+  Binary classification on the Adult Income dataset (income >50K). Metric:
+  ROC AUC, higher is better. Mixed categorical + numeric features with
+  significant missingness. Mid-range baseline (~0.85), room for tuning.
+metric: roc_auc
+metric_higher_better: true
+train_path: tasks/data/adult_income/train.csv
+test_features_path: tasks/data/adult_income/test_features.csv
+hidden_labels_path: tasks/hidden_labels/adult_income/y_test.csv

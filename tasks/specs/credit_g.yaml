@@ -1,0 +1,10 @@
+id: credit_g
+description: >
+  German Credit (OpenML "credit-g"). Бинарная классификация кредитного риска
+  (good vs bad) по 20 признакам (mix категорий и числовых). Метрика — ROC AUC,
+  выше лучше. Классический Kaggle/UCI-датасет с mid-tier baseline (~0.78).
+metric: roc_auc
+metric_higher_better: true
+train_path: tasks/data/credit_g/train.csv
+test_features_path: tasks/data/credit_g/test_features.csv
+hidden_labels_path: tasks/hidden_labels/credit_g/y_test.csv

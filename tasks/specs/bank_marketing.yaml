@@ -1,0 +1,11 @@
+id: bank_marketing
+description: >
+  Bank Marketing (OpenML "bank-marketing"). Бинарная классификация подписки на
+  депозит (yes/no). Сильный классовый дисбаланс (~12% позитивных), смешанные
+  числовые и категориальные признаки. Метрика — ROC AUC, выше лучше.
+  Сабсэмпл 5k строк со стратификацией по target.
+metric: roc_auc
+metric_higher_better: true
+train_path: tasks/data/bank_marketing/train.csv
+test_features_path: tasks/data/bank_marketing/test_features.csv
+hidden_labels_path: tasks/hidden_labels/bank_marketing/y_test.csv

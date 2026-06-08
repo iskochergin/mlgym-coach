@@ -1,0 +1,10 @@
+id: wine_quality
+description: >
+  Regression on the Wine Quality (red) dataset. Predict 0–10 quality score
+  from physico-chemical properties. Metric: RMSE, lower is better. Noisy
+  target; baseline RMSE ~0.65, room for non-linear models.
+metric: rmse
+metric_higher_better: false
+train_path: tasks/data/wine_quality/train.csv
+test_features_path: tasks/data/wine_quality/test_features.csv
+hidden_labels_path: tasks/hidden_labels/wine_quality/y_test.csv

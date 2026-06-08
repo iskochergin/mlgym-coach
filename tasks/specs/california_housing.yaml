@@ -1,0 +1,11 @@
+id: california_housing
+description: >
+  Regression on the California Housing dataset. Predict median house value
+  (in units of $100k). Metric: RMSE, lower is better. Numeric features with
+  geographic structure — feature engineering (interactions, log-transforms)
+  often helps.
+metric: rmse
+metric_higher_better: false
+train_path: tasks/data/california_housing/train.csv
+test_features_path: tasks/data/california_housing/test_features.csv
+hidden_labels_path: tasks/hidden_labels/california_housing/y_test.csv

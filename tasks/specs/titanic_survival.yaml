@@ -1,0 +1,11 @@
+id: titanic_survival
+description: >
+  Binary classification on the Titanic dataset. Predict the probability that
+  a passenger survived. Metric: ROC AUC, higher is better. Train contains
+  features and target; test features contain features only. Mixed types
+  (categorical + numeric) and missing values are present.
+metric: roc_auc
+metric_higher_better: true
+train_path: tasks/data/titanic_survival/train.csv
+test_features_path: tasks/data/titanic_survival/test_features.csv
+hidden_labels_path: tasks/hidden_labels/titanic_survival/y_test.csv
