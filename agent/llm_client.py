@@ -85,6 +85,11 @@ class OpenAIClient:
         if self.config.base_url:
             kwargs["base_url"] = self.config.base_url
         self._client = OpenAI(**kwargs)
+        # Реальные usage с последнего вызова (None = не доступно). Прокидывается
+        # дальше в BaselineAgent.last_tokens и оттуда в Env.step(tokens_used=...).
+        self.last_usage_total: Optional[int] = None
+        self.last_usage_prompt: Optional[int] = None
+        self.last_usage_completion: Optional[int] = None
 
     def complete(self, messages: list[dict], max_tokens: int = 800) -> str:
         """Резильентный complete: пробуем современные параметры (gpt-5-family —
@@ -109,6 +114,17 @@ class OpenAIClient:
                 resp = self._client.chat.completions.create(**base, max_tokens=max_tokens)
             else:
                 raise
+        # Сохраняем реальный usage от OpenAI (если есть в ответе).
+        usage = getattr(resp, "usage", None)
+        if usage is not None:
+            try:
+                self.last_usage_prompt = int(getattr(usage, "prompt_tokens", 0) or 0)
+                self.last_usage_completion = int(getattr(usage, "completion_tokens", 0) or 0)
+                self.last_usage_total = int(
+                    getattr(usage, "total_tokens", self.last_usage_prompt + self.last_usage_completion)
+                )
+            except (TypeError, ValueError):
+                self.last_usage_total = None
         return resp.choices[0].message.content or ""
 
 
@@ -174,6 +190,10 @@ class MockLLM:
     def __init__(self, script: Optional[list[str]] = None) -> None:
         self._script = list(script) if script is not None else list(_MOCK_SCRIPT)
         self._idx = 0
+        # У моков реального usage нет — потребитель будет фолбэчиться на эвристику.
+        self.last_usage_total: Optional[int] = None
+        self.last_usage_prompt: Optional[int] = None
+        self.last_usage_completion: Optional[int] = None
 
     def complete(self, messages: list[dict], max_tokens: int = 800) -> str:
         idx = min(self._idx, len(self._script) - 1)

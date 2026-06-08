@@ -57,6 +57,7 @@ class Env:
         agent_name: str = "baseline",
         hidden_labels_path: Optional[str] = None,
         run_dir: Optional[str] = None,
+        max_steps: Optional[int] = None,
     ) -> None:
         self.task = task
         self.coach: _CoachLike = coach if coach is not None else DummyCoach()
@@ -69,6 +70,8 @@ class Env:
         )
         # Куда писать снапшоты эпизода (partial во время прогона + финальный).
         self.run_dir: Path = Path(run_dir) if run_dir is not None else (_REPO_ROOT / "runs" / "local")
+        # Нужно, чтобы знать, сколько шагов осталось — для принудительного submit.
+        self.max_steps: Optional[int] = max_steps
 
         self._history: list[Step] = []
         self._stage: Stage = Stage.EDA  # стартовая стадия (UNDERSTAND убрали в Stage 5→4)
@@ -79,6 +82,8 @@ class Env:
         self._last_coverage: float = 0.0
         self._has_run: bool = False
         self._current_code: str = ""  # последний принятый CODE — его исполняют RUN/SUBMIT
+        self._step_count: int = 0
+        self._forced_submit_done: bool = False
 
     def reset(self, task: Optional[Task] = None) -> Observation:
         if task is not None:
@@ -92,6 +97,8 @@ class Env:
         self._last_coverage = 0.0
         self._has_run = False
         self._current_code = ""
+        self._step_count = 0
+        self._forced_submit_done = False
         return Observation(
             task=self.task,
             stage=self._stage,
@@ -102,9 +109,54 @@ class Env:
             hints=[],
         )
 
-    def step(self, action: Action) -> Observation:
-        tokens_used = max(1, len(action.content) // 4)
+    def step(self, action: Action, tokens_used: Optional[int] = None) -> Observation:
+        # Сохраняем ОРИГИНАЛЬНЫЙ content до подмены, чтобы оценка по эвристике
+        # (когда real tokens_used отсутствует) считалась по реальному действию агента.
+        original_content_len = len(action.content)
+
+        # Plan-spam guard: если последние 2 действия были PLAN и текущее тоже PLAN —
+        # модель залипла. Подменяем по приоритету: есть val_score → SUBMIT;
+        # есть код но без скор → RUN; иначе пропускаем (даём дойти до nudge'а).
+        last_two = [s.action.type for s in self._history[-2:]]
+        is_plan_loop = (
+            action.type == ActionType.PLAN
+            and len(last_two) == 2
+            and all(t == ActionType.PLAN for t in last_two)
+        )
+        if is_plan_loop and self._last_val_score is not None and self._current_code:
+            action = Action(
+                type=ActionType.SUBMIT,
+                content="[FORCED_SUBMIT: plan-loop ≥3 + val_score есть → финализирую]",
+            )
+            self._forced_submit_done = True
+        elif is_plan_loop and self._current_code:
+            action = Action(
+                type=ActionType.RUN,
+                content="[FORCED_RUN: plan-loop ≥3 → запускаю текущий код]",
+            )
+
+        # Force-submit: если уже есть val_score и осталось ≤2 шагов до max_steps,
+        # а агент опять выдаёт не-submit/не-run — финализируем эпизод СУЩЕСТВУЮЩИМ
+        # кодом, чтобы не уходить в None final_test_score.
+        if (
+            self.max_steps is not None
+            and self.max_steps >= 4
+            and self._last_val_score is not None
+            and self._current_code
+            and not self._forced_submit_done
+            and self._step_count >= self.max_steps - 2
+            and action.type not in (ActionType.SUBMIT, ActionType.RUN)
+        ):
+            action = Action(
+                type=ActionType.SUBMIT,
+                content="[FORCED_SUBMIT: steps_left<=2 + val_score есть → финализирую текущий код]",
+            )
+            self._forced_submit_done = True
+
+        if tokens_used is None:
+            tokens_used = max(1, original_content_len // 4)
         self._tokens_left -= tokens_used
+        self._step_count += 1
 
         new_stage = self._next_stage(self._stage, action.type)
         result, val_score = self._execute(action)
@@ -152,6 +204,13 @@ class Env:
     def _episode_snapshot(self) -> EpisodeResult:
         """Текущий снапшот эпизода (история + накопленные токены/покрытие)."""
         total_tokens = sum(s.tokens_used for s in self._history)
+        # Если коуч обёрнут (например HintLevelLimitedCoach) — пишем имя ВНУТРЕННЕГО
+        # коуча, чтобы дашборд группировал прогоны по содержательному типу, а не
+        # обёртке. Плюс отдельным полем фиксируем max_hint_level для ablation-разбора.
+        inner_coach = getattr(self.coach, "inner", self.coach)
+        coach_cfg: dict = {"coach": type(inner_coach).__name__}
+        if hasattr(self.coach, "max_level"):
+            coach_cfg["max_hint_level"] = int(getattr(self.coach, "max_level"))
         return EpisodeResult(
             task_id=self.task.id,
             agent=self.agent_name,
@@ -162,7 +221,7 @@ class Env:
             total_tokens=total_tokens,
             config={
                 "token_budget": self.token_budget,
-                "coach": type(self.coach).__name__,
+                **coach_cfg,
             },
         )
 
