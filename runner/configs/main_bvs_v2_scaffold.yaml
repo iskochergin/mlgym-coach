@@ -1,0 +1,22 @@
+experiment_name: main_bvs_v2/scaffold_real
+model: gpt-5-mini
+env: real
+coach: real
+agents:
+  - scaffold
+seeds:
+  - 0
+  - 1
+  - 2
+  - 3
+  - 4
+tasks:
+  - tasks/specs/breast_cancer_roc_auc.yaml
+  - tasks/specs/diabetes_rmse.yaml
+  - tasks/specs/titanic_survival.yaml
+  - tasks/specs/california_housing.yaml
+  - tasks/specs/adult_income.yaml
+  - tasks/specs/wine_quality.yaml
+token_budget: 30000
+max_steps: 18
+output_dir: runs
