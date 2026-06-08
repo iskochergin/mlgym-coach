@@ -556,7 +556,6 @@ def page_run_experiment(tasks: list[dict]) -> None:
                     agent_dirs = [d for d in output_dir.rglob("*") if d.is_dir() and (d / "episode.json").exists() or (d / "episode.partial.json").exists()]
 
                 if not agent_dirs:
-                    print('Code was here')
                     st.info(f"Waiting for agents to start in {exp_name}...")
                     continue
 
