@@ -23,8 +23,12 @@ from core.types import (
     Step,
     Task,
 )
+from env.candidates import CandidateRegistry, parse_choose_marker
 from env.dummy_coach import DummyCoach
 from env.executor import run_solution
+from env.stage_policy import StagePolicy, resolve_stage_policy
+
+ENV_VERSION = "v3-pr1"
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 
@@ -58,6 +62,8 @@ class Env:
         hidden_labels_path: Optional[str] = None,
         run_dir: Optional[str] = None,
         max_steps: Optional[int] = None,
+        stage_policy: Optional[StagePolicy] = None,
+        mode: str = "flexible",
     ) -> None:
         self.task = task
         self.coach: _CoachLike = coach if coach is not None else DummyCoach()
@@ -72,6 +78,10 @@ class Env:
         self.run_dir: Path = Path(run_dir) if run_dir is not None else (_REPO_ROOT / "runs" / "local")
         # Нужно, чтобы знать, сколько шагов осталось — для принудительного submit.
         self.max_steps: Optional[int] = max_steps
+        # Mode и stage_policy — для 4-режимного challenge.
+        self.mode: str = mode
+        self.stage_policy: StagePolicy = stage_policy or resolve_stage_policy("flexible")
+        self._policy_applies = mode in {"fixed", "flexible"}
 
         self._history: list[Step] = []
         self._stage: Stage = Stage.EDA  # стартовая стадия (UNDERSTAND убрали в Stage 5→4)
@@ -84,6 +94,12 @@ class Env:
         self._current_code: str = ""  # последний принятый CODE — его исполняют RUN/SUBMIT
         self._step_count: int = 0
         self._forced_submit_done: bool = False
+        # PR1: candidate registry + grade lock + failure modes.
+        self._candidates = CandidateRegistry(metric_higher_better=task.metric_higher_better)
+        self._grade_count: int = 0   # сколько раз дёрнули grader
+        self._locked: bool = False   # после первой оценки — лок дальнейших submit
+        self._failure_modes: list[str] = []
+        self._chosen_candidate_id: Optional[str] = None
 
     def reset(self, task: Optional[Task] = None) -> Observation:
         if task is not None:
@@ -99,6 +115,11 @@ class Env:
         self._current_code = ""
         self._step_count = 0
         self._forced_submit_done = False
+        self._candidates = CandidateRegistry(metric_higher_better=self.task.metric_higher_better)
+        self._grade_count = 0
+        self._locked = False
+        self._failure_modes = []
+        self._chosen_candidate_id = None
         return Observation(
             task=self.task,
             stage=self._stage,
@@ -113,6 +134,13 @@ class Env:
         # Сохраняем ОРИГИНАЛЬНЫЙ content до подмены, чтобы оценка по эвристике
         # (когда real tokens_used отсутствует) считалась по реальному действию агента.
         original_content_len = len(action.content)
+
+        # Stage policy: применяется ТОЛЬКО в fixed/flexible режимах. Для single_shot
+        # и repeated_single_shot стадии нерелевантны (one-shot выполнение).
+        if self._policy_applies:
+            allowed, replacement = self.stage_policy.check(self._stage, action)
+            if not allowed and replacement is not None:
+                action = replacement
 
         # Plan-spam guard: если последние 2 действия были PLAN и текущее тоже PLAN —
         # модель залипла. Подменяем по приоритету: есть val_score → SUBMIT;
@@ -166,6 +194,14 @@ class Env:
         if action.type == ActionType.RUN:
             self._has_run = True
             self._last_val_score = val_score
+            # PR1: автоматическая регистрация Candidate на успешном RUN.
+            # predict_code = _current_code (требуется dual-branch: train + PREDICT=1).
+            if val_score is not None and self._current_code:
+                self._candidates.register(
+                    predict_code=self._current_code,
+                    val_score=val_score,
+                    step_idx=len(self._history),
+                )
 
         self._stage = new_stage
         self._last_result = result
@@ -211,6 +247,21 @@ class Env:
         coach_cfg: dict = {"coach": type(inner_coach).__name__}
         if hasattr(self.coach, "max_level"):
             coach_cfg["max_hint_level"] = int(getattr(self.coach, "max_level"))
+        # PR1: snapshot env config (env_version, mode, stage_policy, sandbox),
+        # failure_modes, candidates registry, chosen candidate.
+        snapshot_cfg: dict = {
+            "token_budget": self.token_budget,
+            "max_steps": self.max_steps,
+            "env_version": ENV_VERSION,
+            "mode": self.mode,
+            "stage_policy": getattr(self.stage_policy, "name", "flexible"),
+            "sandbox": os.environ.get("MLGYM_SANDBOX", "permissive"),
+            **coach_cfg,
+            "failure_modes": list(self._failure_modes),
+            "candidates_n": len(self._candidates.all()),
+            "chosen_candidate_id": self._chosen_candidate_id,
+            "grade_count": self._grade_count,
+        }
         return EpisodeResult(
             task_id=self.task.id,
             agent=self.agent_name,
@@ -219,10 +270,7 @@ class Env:
             final_test_score=self._final_test_score,
             checklist_coverage=self._last_coverage,
             total_tokens=total_tokens,
-            config={
-                "token_budget": self.token_budget,
-                **coach_cfg,
-            },
+            config=snapshot_cfg,
         )
 
     def result(self) -> EpisodeResult:
@@ -288,7 +336,7 @@ class Env:
                 return "нет кода для запуска: сначала пришли действие CODE", None
             return run_solution(self._current_code, self.task, mode="run")
         if action.type == ActionType.SUBMIT:
-            return self._execute_submit(self._current_code or action.content)
+            return self._execute_submit_with_candidate(action)
         if action.type == ActionType.CODE:
             self._current_code = action.content
             lines = action.content.count("\n") + 1
@@ -298,6 +346,51 @@ class Env:
         if action.type == ActionType.EDA:
             return "eda noted", None
         return "", None
+
+    def _execute_submit_with_candidate(self, action: Action) -> tuple[str, Optional[float]]:
+        """SUBMIT: применяет predict_code Кандидата (явно выбранного через
+        [CHOOSE:cand_id] или fallback на best_by_validation) к raw test rows.
+
+        Privacy lock: после первой оценки эпизод залочен. Повторный SUBMIT
+        возвращает None и пишет failure_mode 'double_final_grade_attempt'."""
+        # Privacy lock — повторная оценка запрещена.
+        if self._locked:
+            self._failure_modes.append("double_final_grade_attempt")
+            return "[LOCKED] эпизод уже оценён; повторный SUBMIT отклонён", None
+
+        # Разбираем [CHOOSE:cand_id] (опциональный префикс в content).
+        cid = parse_choose_marker(action.content)
+        chosen = None
+        if cid:
+            if cid.lower() == "best":
+                chosen = self._candidates.best_by_validation()
+            else:
+                chosen = self._candidates.get(cid)
+            if chosen is None and cid.lower() != "best":
+                # Невалидный candidate_id — отметим, fallback на best.
+                self._failure_modes.append(f"invalid_choose_id:{cid}")
+                chosen = self._candidates.best_by_validation()
+            if chosen is not None:
+                self._chosen_candidate_id = chosen.candidate_id
+
+        # Fallback: нет явного CHOOSE → best_by_validation. Если и тот None —
+        # все попытки провалились, эпизод финализируется без скора.
+        if chosen is None:
+            chosen = self._candidates.best_by_validation()
+            if chosen is not None:
+                self._chosen_candidate_id = chosen.candidate_id
+
+        if chosen is None:
+            self._failure_modes.append("no_candidate_registered")
+            self._locked = True
+            self._final_test_score = None
+            return "[NO_CANDIDATE] не зарегистрировано ни одного валидного кандидата", None
+
+        result, score = self._execute_submit(chosen.predict_code)
+        # Lock после первой попытки оценки (успешной или нет).
+        self._grade_count += 1
+        self._locked = True
+        return result, score
 
     def _execute_submit(self, code: str) -> tuple[str, Optional[float]]:
         """Песочница пишет predictions.csv → грейдер считает test-метрику по y_test.

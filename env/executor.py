@@ -104,26 +104,20 @@ def run_solution(
         if mode == "submit":
             env["PREDICT"] = "1"
 
-        (workdir / "solution.py").write_text(code, encoding="utf-8")
+        # Исполнение через абстрактный Sandbox (MLGYM_SANDBOX env var).
+        from env.sandbox import get_sandbox
+        sandbox = get_sandbox()
+        sb_result = sandbox.run(code, env=env, cwd=workdir, timeout=_TIMEOUT_SEC)
 
-        try:
-            proc = subprocess.run(
-                [sys.executable, "solution.py"],
-                cwd=str(workdir),
-                env=env,
-                capture_output=True,
-                text=True,
-                timeout=_TIMEOUT_SEC,
-            )
-        except subprocess.TimeoutExpired:
+        if sb_result.timed_out:
             return f"executor: таймаут {_TIMEOUT_SEC}s", None
 
-        stdout = proc.stdout or ""
-        stderr = proc.stderr or ""
+        stdout = sb_result.stdout
+        stderr = sb_result.stderr
 
-        if proc.returncode != 0:
+        if sb_result.returncode != 0:
             tail = stderr.strip()[-1500:]
-            return f"executor: код вышел с ошибкой (rc={proc.returncode})\n{tail}", None
+            return f"executor: код вышел с ошибкой (rc={sb_result.returncode})\n{tail}", None
 
         if mode == "submit":
             preds = workdir / "predictions.csv"
