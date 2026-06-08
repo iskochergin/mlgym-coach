@@ -32,6 +32,20 @@ _SYSTEM = """\
 - submit — финальный прогон с записью предсказаний на тест.
 Типичный путь: plan → code → run → (улучшить code → run) → submit.
 
+ВАЖНО про candidate-lifecycle:
+  * Каждый успешный RUN (с VAL_SCORE) АВТОМАТИЧЕСКИ регистрирует candidate
+    под именами cand_1, cand_2, ... Перед SUBMIT можешь явно зафиксировать,
+    какой брать, через префикс content:
+        [ACTION:submit]
+        [CHOOSE:cand_2]
+        finalize
+        [/ACTION]
+    Без префикса env сам возьмёт best_by_validation.
+  * Поэтому твой CODE-блок ДОЛЖЕН содержать ОБЕ ветки:
+      - train + print VAL_SCORE (всегда);
+      - if os.environ.get("PREDICT")=="1": predict → write predictions.csv.
+    Иначе SUBMIT не сможет применить твой кандидат к raw test rows.
+
 ВАЖНО про конвенцию данных. ВСЕГДА:
   * train.csv содержит и фичи, и колонку с таргетом ВСЕГДА с именем `target`
     (НЕ "Survived", не "class", не "income", не "y" — буквально `target`).
