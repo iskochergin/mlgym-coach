@@ -9,7 +9,7 @@ from __future__ import annotations
 from typing import Optional
 
 from agent.llm_client import build_client
-from core.types import Action, Observation, Step
+from core.types import Action, ActionType, Observation, Step
 from env.parser import parse_action
 
 _SYSTEM = """\
@@ -58,7 +58,7 @@ class BaselineAgent:
             {"role": "system", "content": _SYSTEM},
             {"role": "user", "content": prompt},
         ]
-        raw = self.client.complete(messages, max_tokens=1200)
+        raw = self.client.complete(messages, max_tokens=2000)
         return parse_action(raw)
 
     def _build_prompt(self, obs: Observation) -> str:
@@ -82,5 +82,41 @@ class BaselineAgent:
             parts.append("Подсказки коуча:")
             for h in obs.hints:
                 parts.append(f"  - [L{h.level}] {h.text}")
-        parts += ["", "Выдай ровно одно следующее действие в требуемом формате."]
+
+        # Жёсткий nudge по истории: говорим прямо, какой ход ОБЯЗАТЕЛЬНЫЙ дальше,
+        # чтобы модель не залипала в бесконечном planning.
+        nudge = _next_step_hint(obs)
+        if nudge:
+            parts += ["", nudge]
+        parts += [
+            "",
+            "Выдай ровно одно следующее действие в требуемом формате [ACTION:type]…[/ACTION].",
+        ]
         return "\n".join(parts)
+
+
+def _next_step_hint(obs: Observation) -> str:
+    """По истории сказать модели, что от неё ждут СЛЕДУЮЩИМ шагом."""
+    types = [s.action.type for s in obs.history]
+    has_code = ActionType.CODE in types
+    has_run_with_score = any(
+        s.action.type == ActionType.RUN and s.val_score is not None for s in obs.history
+    )
+    has_run = ActionType.RUN in types
+
+    if not has_code:
+        if len(types) >= 1:
+            return (
+                "СЛЕДУЮЩИЙ ход ОБЯЗАН быть [ACTION:code] с ПОЛНЫМ рабочим python-скриптом "
+                "(чтение TRAIN_PATH, обучение, печать VAL_SCORE=<float>, поддержка PREDICT=1 "
+                "для записи predictions.csv по TEST_PATH). Без code дальше идти нельзя."
+            )
+        return ""  # совсем пусто — пусть начнёт с plan/eda естественно
+    if has_code and not has_run:
+        return "У тебя уже есть код. СЛЕДУЮЩИЙ ход — [ACTION:run], чтобы получить VAL_SCORE."
+    if has_run_with_score:
+        return (
+            "Уже есть валидационный скор. Либо улучши решение через [ACTION:code], либо "
+            "финализируй через [ACTION:submit]."
+        )
+    return ""

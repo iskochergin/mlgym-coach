@@ -817,7 +817,87 @@ def apply_theme(dark_mode: bool) -> None:
     )
 
 
+def apply_modern_styles() -> None:
+    """Глобальные стили: типографика, скругления, мягкие тени.
+
+    Цвета НЕ задаём — оставляем теме (config.toml + apply_theme); меняем только
+    форму (фонт, радиусы, отступы), чтобы тёмная и светлая тема обе оставались
+    консистентными."""
+    st.markdown(
+        """
+        <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+        html, body, .stApp, .stApp [class*="css"] {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
+        }
+        .stApp h1 { font-weight: 700; letter-spacing: -0.02em; margin-bottom: 0.4em; }
+        .stApp h2 { font-weight: 600; letter-spacing: -0.01em; }
+        .stApp h3 { font-weight: 600; letter-spacing: -0.01em; }
+
+        /* Поля ввода: мягкие скругления + фокус-ринг */
+        .stApp [data-baseweb="input"],
+        .stApp [data-baseweb="textarea"],
+        .stApp [data-baseweb="select"] > div:first-child {
+            border-radius: 10px !important;
+            transition: border-color .15s ease, box-shadow .15s ease;
+        }
+        .stApp [data-baseweb="input"]:focus-within,
+        .stApp [data-baseweb="textarea"]:focus-within,
+        .stApp [data-baseweb="select"] > div:first-child:focus-within {
+            box-shadow: 0 0 0 3px rgba(239,68,68,0.18) !important;
+        }
+
+        /* Кнопки: скругление, мягкая тень, hover */
+        .stApp .stButton > button,
+        .stApp [data-testid="stFormSubmitButton"] button,
+        .stApp [data-testid="baseButton-secondary"],
+        .stApp [data-testid="baseButton-primary"] {
+            border-radius: 12px !important;
+            font-weight: 600 !important;
+            padding: 0.55em 1.2em !important;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+            transition: transform .08s ease, box-shadow .15s ease;
+        }
+        .stApp .stButton > button:hover,
+        .stApp [data-testid="stFormSubmitButton"] button:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 14px rgba(0,0,0,0.10);
+        }
+
+        /* Sidebar: воздуха больше */
+        section[data-testid="stSidebar"] > div:first-child { padding-top: 1.4rem; }
+        section[data-testid="stSidebar"] .stRadio label { padding: 6px 4px; }
+
+        /* Метрики и экспандеры — мягкий контейнер */
+        .stApp [data-testid="stMetric"] {
+            background: rgba(120,120,120,0.05);
+            border: 1px solid rgba(120,120,120,0.14);
+            border-radius: 14px;
+            padding: 12px 14px;
+        }
+        .stApp [data-testid="stExpander"] details {
+            border-radius: 12px !important;
+            border-color: rgba(120,120,120,0.18) !important;
+        }
+
+        /* File uploader — модерн drag-zone */
+        .stApp [data-testid="stFileUploaderDropzone"] {
+            border-radius: 12px !important;
+            border: 1px dashed rgba(120,120,120,0.40) !important;
+            background: rgba(120,120,120,0.04) !important;
+        }
+
+        /* Прячем стандартный «Made with Streamlit» footer */
+        footer { visibility: hidden; }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
 def main() -> None:
+    apply_modern_styles()
     episodes_with_meta = load_episodes_with_meta()
     df = episodes_dataframe(episodes_with_meta) if episodes_with_meta else pd.DataFrame()
     tasks = load_tasks(episodes_with_meta)

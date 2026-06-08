@@ -87,11 +87,28 @@ class OpenAIClient:
         self._client = OpenAI(**kwargs)
 
     def complete(self, messages: list[dict], max_tokens: int = 800) -> str:
-        resp = self._client.chat.completions.create(
-            model=self.config.model,
-            messages=messages,
-            max_tokens=max_tokens,
-        )
+        """Резильентный complete: пробуем современные параметры (gpt-5-family —
+        max_completion_tokens + reasoning_effort=minimal, чтобы скрытый reasoning
+        не съедал ответ), при ошибке откатываемся к более старым."""
+        base = {"model": self.config.model, "messages": messages}
+        modern = {**base, "max_completion_tokens": max_tokens, "reasoning_effort": "minimal"}
+        try:
+            resp = self._client.chat.completions.create(**modern)
+        except Exception as e:
+            msg = str(e).lower()
+            if "reasoning_effort" in msg:
+                modern.pop("reasoning_effort", None)
+                try:
+                    resp = self._client.chat.completions.create(**modern)
+                except Exception as e2:
+                    if "max_completion_tokens" in str(e2).lower() or "unsupported parameter" in str(e2).lower():
+                        resp = self._client.chat.completions.create(**base, max_tokens=max_tokens)
+                    else:
+                        raise
+            elif "max_completion_tokens" in msg or "unsupported parameter" in msg:
+                resp = self._client.chat.completions.create(**base, max_tokens=max_tokens)
+            else:
+                raise
         return resp.choices[0].message.content or ""
 
 
