@@ -288,3 +288,100 @@ def score_submission(task: Task, predictions) -> float: ...   # считает �
 Данные переживают пересборку образа — `runs/` и `tasks/uploads/` смонтированы как
 volume. Песочница исполнения кода в этом варианте НЕ изолирована (агент пишет наш же
 baseline-код); строгая изоляция — задача на потом, когда будет исполняться чужой код.
+
+---
+
+## AutoML Gym Challenge — protocols & contracts
+
+### Interaction modes (4)
+
+Каждый эпизод гонится в одном из 4 режимов. Контракт «что видит агент» и «что
+делает Env» жёстко зафиксирован.
+
+| mode | agent | coach | stage_policy | что видит агент между шагами |
+|---|---|---|---|---|
+| `single_shot` | `SingleShotAgent` | DummyCoach | flexible (не применяется) | ничего: ровно один LLM-вызов → CODE + RUN + SUBMIT[CHOOSE:cand_1] |
+| `repeated_single_shot` | `RepeatedSingleShotAgent` (N=3) | DummyCoach | flexible (не применяется) | только список scalar `val_score` предыдущих попыток; никакого кода, traceback, hints |
+| `fixed` | `BaselineAgent` | real `Coach` | `FixedTransitionsPolicy` (EDA→Baseline→Improve→Submit, без возвратов) | observation + hints; любой «прыжок» назад/вперёд подменяется на nudge |
+| `flexible` | `BaselineAgent` | real `Coach` | `FlexibleTransitionsPolicy` | observation + hints; агент сам выбирает следующий шаг |
+
+Backward-compat алиасы (`baseline` → no_coach_flexible, `scaffold` → flexible)
+живут в `scripts/run_all_parallel.py` для v2-конфигов.
+
+### Candidate lifecycle: Train → Validate → Choose → Replay → Final
+
+1. **Train + Validate.** Каждый успешный RUN с непустым `VAL_SCORE` АВТОМАТИЧЕСКИ
+   регистрирует `Candidate(cand_N, val_score, predict_code, step_idx)` в
+   `CandidateRegistry`. `predict_code = последний принятый CODE-блок`; от агента
+   ТРЕБУЕТСЯ держать в CODE обе ветки — train+VAL_SCORE и `if PREDICT=1: predict`.
+2. **Choose.** Агент перед SUBMIT может явно зафиксировать кандидат через префикс
+   в content: `[CHOOSE:cand_3]`. Поддерживается keyword `[CHOOSE:best]`.
+3. **Fallback.** Если CHOOSE не вызван или cand_id невалиден — Env берёт
+   `registry.best_by_validation()` и пишет в `EpisodeResult.config['failure_modes']`
+   соответствующий маркер (`invalid_choose_id:X` если был неверный id).
+4. **Replay.** SUBMIT запускает Sandbox с `predict_code` ВЫБРАННОГО кандидата
+   (не последнего CODE-блока) и PREDICT=1, получает `predictions.csv`.
+5. **Final.** Grader (`coach/grader.py`) считает метрику по `hidden_labels/y_test.csv`.
+   `EpisodeResult.final_test_score` — это число, и оно НЕ возвращается обратно агенту.
+
+### Privacy contract
+
+Что физически защищено сейчас:
+* Hidden labels (`tasks/hidden_labels/`) **не копируются** в workdir; ничего из
+  них не попадает в `TRAIN_PATH` или `TEST_PATH` окружения subprocess.
+* После первого вызова grader'а Env **залочен** (`_locked=True`); повторный
+  SUBMIT возвращает `None` и добавляет `failure_modes += ["double_final_grade_attempt"]`.
+* `final_test_score` пишется ТОЛЬКО в `EpisodeResult` и не показывается агенту
+  в обsservation следующего шага.
+
+Что НЕ защищено сейчас (явно):
+* Sandbox запускает subprocess с **full FS access** — агентский код в принципе
+  может прочитать `tasks/hidden_labels/<id>/y_test.csv` напрямую по пути. PR2
+  включает shallow detector через regex на `predict_code`, но это **не
+  криптографическая защита**, expert evasion (base64-encoded path, экзотические
+  способы открытия файла) пройдут мимо.
+* Реальный sandbox (bwrap / firejail / контейнер per-run с unmounted
+  `hidden_labels/`) — отдельная инженерная задача, реализация в
+  `env/sandbox.py:RestrictiveSandbox` намеренно raises `NotImplementedError`.
+  Переключатель: `MLGYM_SANDBOX=permissive` (default) | `restrictive`.
+
+Production-grade challenge evaluation **должна** включать restrictive sandbox.
+
+### How to add a new mode
+
+1. Описать contract (что видит агент, какая stage_policy, какой coach).
+2. Если новый агент — создать `agent/<name>.py` с методом `act(obs) -> Action` и
+   опциональным `last_tokens`.
+3. Если новая stage_policy — добавить в `env/stage_policy.py`,
+   расширить `resolve_stage_policy`.
+4. Зарегистрировать в `scripts/run_4modes_v3.py::MODES` как
+   `(mode_name, coach_kind, policy_name)` и в `_agent_factory`.
+
+### How to add a new task
+
+1. Добавить функцию `prepare_<task>()` в `tasks/prepare_datasets.py` по образцу
+   `prepare_titanic_survival`. Использовать `_write_split(task_id, features, target)` —
+   она автоматически создаст:
+   - `tasks/data/<task_id>/train.csv` (X + target)
+   - `tasks/data/<task_id>/test_features.csv` (только X)
+   - `tasks/hidden_labels/<task_id>/y_test.csv` (только target)
+2. Создать spec `tasks/specs/<task_id>.yaml` с обязательными полями id /
+   description / metric / metric_higher_better / *_path.
+3. Запустить `python3 -m tasks.prepare_datasets`.
+4. Добавить путь к spec в `runner/configs/*.yaml` или в `scripts/run_4modes_v3.py::TASKS`.
+
+### How to reproduce main_4modes_v3 experiment
+
+```bash
+# .env содержит OPENAI_API_KEY=sk-... + OPENAI_MODEL + MLGYM_LLM=openai
+docker compose up -d --build           # (опционально, если нужен дашборд)
+MLGYM_LLM=openai OPENAI_MODEL=gpt-5-mini MLGYM_RUN_TAG=v3_5mini \
+  python3 scripts/run_4modes_v3.py --workers 3 --tag v3_5mini
+# Параллельно — другие модели:
+MLGYM_LLM=openai OPENAI_MODEL=gpt-4o-mini MLGYM_RUN_TAG=v3_4omini \
+  python3 scripts/run_4modes_v3.py --workers 3 --tag v3_4omini
+MLGYM_LLM=openai OPENAI_MODEL=gpt-5-nano MLGYM_RUN_TAG=v3_5nano \
+  python3 scripts/run_4modes_v3.py --workers 3 --tag v3_5nano
+# Итог: 3 × 72 = 216 эпизодов в runs/main_4modes_v3_*/. Reproducibility:
+# seeds [0,1,2], deterministic kwargs, фиксированный SYSTEM prompt, кэш не используется.
+```
