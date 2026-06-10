@@ -119,7 +119,6 @@ def build_baseline() -> EpisodeResult:
         config={
             "model": "claude-opus-4-7",
             "agent_kind": "react",
-            "max_steps": 12,
             "budget_tokens": 4000,
         },
     )
@@ -292,7 +291,6 @@ def build_scaffold() -> EpisodeResult:
         config={
             "model": "claude-opus-4-7",
             "agent_kind": "react+coach",
-            "max_steps": 16,
             "budget_tokens": 8000,
             "hint_policy": "L1_first_then_L2_if_stuck",
         },
@@ -407,7 +405,6 @@ def build_scaffold_seed1() -> EpisodeResult:
         config={
             "model": "claude-opus-4-7",
             "agent_kind": "react+coach",
-            "max_steps": 14,
             "budget_tokens": 7000,
             "hint_policy": "stage-scoped-escalation",
         },

@@ -139,7 +139,6 @@
   "config": {
     "model": "claude-opus-4-7",
     "agent_kind": "react+coach",
-    "max_steps": 16,
     "budget_tokens": 8000,
     "hint_policy": "L1_first_then_L2_if_stuck"
   }

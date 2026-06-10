@@ -49,7 +49,6 @@ TEXTS = {
     "runexp.token_budget": {"ru": "Токен-бюджет", "en": "Token budget", "hy": "Տոկենների բյուջե"},
     "runexp.hint_level": {"ru": "Уровень подсказок", "en": "Hint level", "hy": "Հուշման մակարդակ"},
     "runexp.llm_mode": {"ru": "Режим LLM", "en": "LLM mode", "hy": "LLM ռեժիմ"},
-    "runexp.max_steps": {"ru": "Максимум шагов", "en": "Max steps", "hy": "Առավելագույն քայլեր"},
     "runexp.submit": {"ru": "Запустить", "en": "Start", "hy": "Սկսել"},
     "runexp.started": {"ru": "Эксперимент запущен в фоне (PID {pid}).", "en": "Experiment started in background (PID {pid}).", "hy": "Փորձարկումը մեկնարկել է ֆոնում (PID {pid})։"},
     "runexp.history": {"ru": "История запусков", "en": "Launch history", "hy": "Մեկնարկների պատմություն"},

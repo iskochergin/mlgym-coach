@@ -73,7 +73,6 @@ class RealEnv:
         # coach: "dummy" | "real" | готовый объект-коуч.
         self._coach = resolve_coach(coach)
         self._agent = agent_obj if agent_obj is not None else BaselineAgent()
-        self._max_steps = int(getattr(config, "max_steps", 12))
         # Явный token_budget важнее значения из config (дефолт — из config / 50k).
         self._token_budget = int(
             token_budget if token_budget is not None else getattr(config, "token_budget", 50_000)
@@ -93,7 +92,7 @@ class RealEnv:
             run_dir=self._run_dir,
         )
         obs = env.reset()
-        for _ in range(self._max_steps):
+        while True:
             action = self._agent.act(obs)
             obs = env.step(action)
             if action.type == ActionType.SUBMIT:

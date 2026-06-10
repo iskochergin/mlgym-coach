@@ -12,5 +12,4 @@ tasks:
   - tasks/specs/breast_cancer_roc_auc.yaml
   - tasks/specs/diabetes_rmse.yaml
 token_budget: 4000
-max_steps: 6
 output_dir: runs

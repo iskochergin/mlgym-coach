@@ -12,7 +12,6 @@ from core.types import Action, ActionType, EpisodeResult, Hint, Stage, Step, Tas
 class FakeEnvConfig:
     model: str
     token_budget: int
-    max_steps: int
     env_name: str = "fake"
     coach: str = "dummy"  # "dummy" (baseline) | "real" (scaffold); используется только real-env
 
@@ -128,7 +127,7 @@ class FakeEnv:
                 tokens_used=self._tokens(150, 260),
             ),
         ]
-        return steps[: self.config.max_steps]
+        return steps
 
     def _eda_or_baseline_content(self) -> str:
         if self.agent == "scaffold":
@@ -160,7 +159,6 @@ class FakeEnv:
             "model": self.config.model,
             "agent_kind": self.agent,
             "env": self.config.env_name,
-            "max_steps": self.config.max_steps,
             "budget_tokens": self.config.token_budget,
             "metric": self.task.metric,
             "metric_higher_better": self.task.metric_higher_better,

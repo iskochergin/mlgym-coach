@@ -442,7 +442,6 @@ def page_run_experiment(tasks: list[dict]) -> None:
         budget = c5.number_input(tr(lang, "runexp.token_budget"), min_value=500, max_value=50000, value=8000, step=500)
         hint_level = c6.selectbox(tr(lang, "runexp.hint_level"), ["L1", "L2", "L3"])
         llm_mode = c7.selectbox(tr(lang, "runexp.llm_mode"), ["mock", "ChatGPT", "DeepSeek"], index=0)
-        max_steps = st.number_input(tr(lang, "runexp.max_steps"), min_value=2, max_value=50, value=6)
 
         submitted = st.form_submit_button(tr(lang, "runexp.submit"), use_container_width=True)
         if submitted:
@@ -465,7 +464,6 @@ def page_run_experiment(tasks: list[dict]) -> None:
                 "seeds": list(range(int(seeds))),
                 "tasks": [task_specs[task_id]["spec_path"]],
                 "token_budget": int(budget),
-                "max_steps": int(max_steps),
                 "output_dir": "runs",
                 # runner игнорирует неизвестные поля; оставляем для дебага/аудита.
                 "hint_level": hint_level,
@@ -627,12 +625,8 @@ def page_run_experiment(tasks: list[dict]) -> None:
 
                         # 4. Step Progress
                         st.markdown("**Step Progress**")
-                        max_s = ep.config.get("max_steps", 6)
                         curr_s = len(ep.steps)
-                        pct_steps = min(curr_s / max_s, 1.0) if max_s > 0 else 0
-                        st.write(f"Steps: {curr_s} / {max_s}")
-                        st.progress(pct_steps)
-                        st.caption(f"{pct_steps:.0%}")
+                        st.write(f"Steps: {curr_s}")
                     
                     st.markdown("---")
 

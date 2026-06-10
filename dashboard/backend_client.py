@@ -71,7 +71,6 @@ def submit_run(
     hidden_labels_csv: Optional[BinaryIO] = None,
     llm_mode: str = "mock",
     model: str = "fake-model",
-    max_steps: int = 12,
 ) -> RunLaunch:
     if api_base_url():
         return _submit_run_http(
@@ -86,7 +85,6 @@ def submit_run(
             hidden_labels_csv=hidden_labels_csv,
             llm_mode=llm_mode,
             model=model,
-            max_steps=max_steps,
         )
     return _submit_run_local(
         description=description,
@@ -100,7 +98,6 @@ def submit_run(
         hidden_labels_csv=hidden_labels_csv,
         llm_mode=llm_mode,
         model=model,
-        max_steps=max_steps,
     )
 
 
@@ -156,7 +153,6 @@ def _build_multipart(boundary: str, fields: dict[str, Any]) -> tuple[bytes, str]
     add_field("seeds", str(fields["seeds"]))
     add_field("llm_mode", str(fields["llm_mode"]))
     add_field("model", str(fields["model"]))
-    add_field("max_steps", str(fields["max_steps"]))
 
     add_file("train_csv", fields["train_csv"], "train.csv")
     add_file("test_features_csv", fields["test_features_csv"], "test_features.csv")
@@ -178,7 +174,6 @@ def _submit_run_local(**kwargs: Any) -> RunLaunch:
     seeds = int(kwargs["seeds"])
     llm_mode = str(kwargs["llm_mode"])
     model = str(kwargs["model"])
-    max_steps = int(kwargs["max_steps"])
 
     # Преобразуем UI названия в значения для env
     env_llm = "mock"
@@ -228,7 +223,6 @@ def _submit_run_local(**kwargs: Any) -> RunLaunch:
         "seeds": list(range(seeds)),
         "tasks": [str(spec_path.relative_to(_REPO_ROOT))],
         "token_budget": token_budget,
-        "max_steps": max_steps,
         "output_dir": "runs",
         "llm_mode": env_llm,
     }
