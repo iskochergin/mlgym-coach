@@ -2,25 +2,25 @@
 
 > A gym for benchmarking how much a structured pipeline + Socratic hints improve LLM agents on tabular ML tasks — baseline vs scaffold, under a fixed token budget.
 
-Этот файл — **полный контекст проекта**. Его можно целиком отдать любому AI-агенту (Claude и др.), чтобы он понял, что мы строим, как устроена архитектура, какие интерфейсы трогать и в какой зоне он сейчас помогает. Если ты агент — сначала прочитай весь файл, потом раздел **«Инструкция для AI-агента»** в конце.
+This file is the **full project context**. You can hand it as-is to any AI agent (Claude, etc.) so it understands what we are building, how the architecture works, which interfaces it may touch, and which area it is currently helping with. If you are an agent — read the whole file first, then the **"Instructions for AI agents"** section at the end.
 
 ---
 
-## Идея
+## Idea
 
-Проверяем одну гипотезу: **насколько структурный пайплайн + наводящие подсказки улучшают LLM-агента на классических табличных ML-задачах** по сравнению с голой LLM.
+We are testing one hypothesis: **how much does a structured pipeline + guiding hints improve an LLM agent on classic tabular ML tasks** compared to a bare LLM.
 
-- Даётся LLM и среда (`env`), в которой агент решает табличную ML-задачу.
-- Агент действует пошагово: `LLM → action → env → feedback`.
-- Внутри среды — **скрытый чек-лист** идеального пайплайна. Агент его не видит; среда по нему выдаёт наводящие подсказки.
-- Жёсткий **лимит токенов** на эпизод. Агент видит всё, кроме `y_test`.
-- Итог — сравнение двух конфигураций: `baseline` (голая LLM) vs `scaffold` (LLM + пайплайн + подсказки), на фиксированных модели и датасете, на нескольких сидах.
+- We take an LLM and an environment (`env`) in which the agent solves a tabular ML task.
+- The agent acts step by step: `LLM → action → env → feedback`.
+- Inside the environment there is a **hidden checklist** of the ideal pipeline. The agent cannot see it; the environment uses it to give guiding hints.
+- A hard **token limit** per episode. The agent sees everything except `y_test`.
+- The outcome is a comparison of two configurations: `baseline` (bare LLM) vs `scaffold` (LLM + pipeline + hints), with a fixed model and dataset, across several seeds.
 
-Подсказки **непрямые**: не «убери выбросы в колонке X», а наводящие, чтобы агент додумал сам. Степень прямоты — экспериментальная переменная (см. лестницу L1–L3 ниже).
+Hints are **indirect**: not "remove the outliers in column X", but nudges that let the agent figure it out on its own. How direct they are is an experimental variable (see the L1–L3 ladder below).
 
 ---
 
-## Как это работает (петля)
+## How it works (the loop)
 
 ```
         ┌─────────── Observation (state, stage, hints, tokens_left) ───────────┐
@@ -41,71 +41,71 @@
                                            Grader → final test score
 ```
 
-Правила доступа к данным:
-- Агент видит: `train (X+y)`, описание задачи, метрику, фичи теста (`X_test`), подсказки.
-- Агент **не видит**: `y_test` и код грейдера. Метрика на тесте считается только при `submit`.
-- Ловим утечки: переобучение на валидации, попытки вытащить лейблы из train.
+Data access rules:
+- The agent sees: `train (X+y)`, the task description, the metric, the test features (`X_test`), and hints.
+- The agent **does not see**: `y_test` or the grader code. The test metric is computed only on `submit`.
+- We catch leaks: overfitting to validation, attempts to pull labels out of train.
 
 ---
 
-## Идеальный пайплайн (v1)
+## Ideal pipeline (v1)
 
-Линейный, 5 стадий, один цикл. Это «трек» агента и одновременно скелет чек-листа Coach (одна группа пунктов на стадию).
+Linear, 5 stages, one loop. It is both the agent's "track" and the skeleton of the Coach checklist (one group of items per stage).
 
 ```
-1 · EDA               →  распределения, пропуски, типы, утечки
-2 · Бейзлайн          →  простейшая модель, первый валид-скор
-3 · Улучшение (цикл)  →  фичи · модель · тюнинг — пока растёт скор
-4 · Сабмит            →  предсказание на тесте, финальный скор
+1 · EDA               →  distributions, missing values, types, leaks
+2 · Baseline          →  simplest model, first validation score
+3 · Improve (loop)    →  features · model · tuning — while the score keeps going up
+4 · Submit            →  predict on test, final score
 ```
 
-На каждом пункте чек-листа Coach держит **детектор** (закрыл ли агент шаг) и **лестницу подсказок**:
+For each checklist item the Coach keeps a **detector** (has the agent completed the step?) and a **hint ladder**:
 
-| Уровень | Что выдаём (пример: «проверить распределение таргета») |
+| Level | What we give (example: "check the target distribution") |
 |---|---|
-| L0 | молчим (по умолчанию) |
-| L1 — направление | «обрати внимание, как устроена твоя целевая переменная — это влияет на выбор лосса» |
-| L2 — вопрос | «ты смотрел на скошенность распределений? уверен, что метрика к ней устойчива?» |
-| L3 — прямая | «прологарифмируй таргет» (в норме не доходим) |
+| L0 | stay silent (default) |
+| L1 — direction | "take a look at how your target variable is structured — it affects the choice of loss" |
+| L2 — question | "have you looked at the skewness of the distributions? are you sure your metric is robust to it?" |
+| L3 — direct | "log-transform the target" (normally we don't get this far) |
 
-Подсказка выдаётся **только для непокрытых пунктов** и эскалирует уровень, если агент N шагов топчется.
+A hint is given **only for uncovered items** and escalates in level if the agent is stuck for N steps.
 
-Намеренно простая версия: без ветвлений, без отдельной стадии «ансамбль/калибровка» (она пока внутри «Улучшения»), цикл один. Когда базовая версия заработает — стадию 4 можно разбить.
+This is an intentionally simple version: no branching, no separate "ensemble/calibration" stage (for now it lives inside "Improve"), a single loop. Once the basic version works, stage 4 can be split up.
 
 ---
 
-## Раскладка репозитория
+## Repository layout
 
-Папка-на-владельца: границы в git совпадают с зонами ответственности → почти нет конфликтов.
+One folder per owner: boundaries in git match areas of responsibility → almost no conflicts.
 
 ```
 mlgym-coach/
-  core/        # КОНТРАКТЫ: Task, Action, Observation, Stage, Hint, Step, EpisodeResult
-               #   types.py — FROZEN; меняется только через синк
-  env/         # [owner: Ваня] gym-петля, парсер действий, песочница, токен-бюджет
-               #   gym.py · executor.py (v1 stub) · dummy_coach.py · run_slice.py (демо)
-  agent/       # [owner: Ваня] baseline (ReAct) + scaffold (tree-search)
-               #   scripted.py — агент-заглушка без LLM, для тестов петли
-  coach/       # [owner: Егор] чек-лист, детекторы, подсказки L1–L3, грейдер, метрики
-  dashboard/   # [owner: Амели] streamlit-вьюер прогонов поверх EpisodeResult.json
-  tasks/       # [owner: Софа] датасеты + спеки задач (train + спрятанный test + метрика)
-  runner/      # [owner: Софа] харнесс экспериментов (фиксирует LLM+датасет, N сидов)
-  reports/     # [owner: Софа] агрегированные результаты, таблицы baseline vs scaffold
+  core/        # CONTRACTS: Task, Action, Observation, Stage, Hint, Step, EpisodeResult
+               #   types.py — FROZEN; changed only via a sync
+  env/         # [owner: Vanya] gym loop, action parser, sandbox, token budget
+               #   gym.py · executor.py (v1 stub) · dummy_coach.py · run_slice.py (demo)
+  agent/       # [owner: Vanya] baseline (ReAct) + scaffold (tree-search)
+               #   scripted.py — stub agent without an LLM, for testing the loop
+  coach/       # [owner: Egor] checklist, detectors, L1–L3 hints, grader, metrics
+  dashboard/   # [owner: Amelie] Streamlit viewer of runs on top of EpisodeResult.json
+  tasks/       # [owner: Sofia] datasets + task specs (train + hidden test + metric)
+  runner/      # [owner: Sofia] experiment harness (fixes LLM + dataset, N seeds)
+  reports/     # [owner: Sofia] aggregated results, baseline vs scaffold tables
 
-  examples/    # эталонные EpisodeResult-фикстуры (episode_baseline.json, episode_scaffold.json)
-               #   + make_examples.py — генератор через core.types. Input для Амели/Софы.
-  runs/        # артефакты прогонов (slice_demo.json и т.п.). В .gitignore, не коммитим.
+  examples/    # reference EpisodeResult fixtures (episode_baseline.json, episode_scaffold.json)
+               #   + make_examples.py — generator via core.types. Input for Amelie/Sofia.
+  runs/        # run artifacts (slice_demo.json, etc.). In .gitignore, not committed.
 ```
 
-Единственная общая зона редактирования — `core/`. Замораживается на старте, меняется только через быстрый синк.
+The only shared editing area is `core/`. It is frozen at the start and changed only via a quick sync.
 
-Сейчас в репо лежит **тонкий сквозной слайс**: `env/` + `agent/scripted.py` крутят петлю end-to-end на заглушках (`executor.py` возвращает фейковые скоры, `dummy_coach.py` молчит). Запуск демо: `python env/run_slice.py` — пишет результат в `runs/slice_demo.json`. Формат гарантированно совпадает с контрактом `core/types.py`.
+The repo currently contains a **thin end-to-end slice**: `env/` + `agent/scripted.py` run the loop end-to-end on stubs (`executor.py` returns fake scores, `dummy_coach.py` stays silent). Run the demo with `python env/run_slice.py` — it writes the result to `runs/slice_demo.json`. The format is guaranteed to match the `core/types.py` contract.
 
 ---
 
-## Контракты `core/` (интерфейс, против которого кодят все)
+## `core/` contracts (the interface everyone codes against)
 
-Это draft v1. Все модули импортируют отсюда и **не меняют поля без синка**.
+This is draft v1. All modules import from here and **do not change fields without a sync**.
 
 ```python
 # core/types.py
@@ -121,32 +121,32 @@ class Stage(str, Enum):
     SUBMIT     = "submit"
 
 class ActionType(str, Enum):
-    PLAN   = "plan"     # рассуждение / план
-    EDA    = "eda"      # исследование данных
-    CODE   = "code"     # написать / переписать код решения
-    RUN    = "run"      # исполнить текущий код, получить валид-метрику
-    SUBMIT = "submit"   # финал: предсказание на тесте
+    PLAN   = "plan"     # reasoning / plan
+    EDA    = "eda"      # data exploration
+    CODE   = "code"     # write / rewrite the solution code
+    RUN    = "run"      # execute the current code, get the validation metric
+    SUBMIT = "submit"   # final: predict on test
 
 @dataclass
 class Task:
     id: str
-    description: str            # текст задачи + определение метрики
+    description: str            # task text + metric definition
     metric: str                 # "roc_auc" | "rmse" | ...
     metric_higher_better: bool
-    train_path: str             # CSV с X + y
-    test_features_path: str     # X_test без лейблов
-    # y_test живёт ТОЛЬКО в Grader, агенту недоступен
+    train_path: str             # CSV with X + y
+    test_features_path: str     # X_test without labels
+    # y_test lives ONLY in the Grader, not available to the agent
 
 @dataclass
 class Action:
     type: ActionType
-    content: str                # текст или код — зависит от type
+    content: str                # text or code — depends on type
 
 @dataclass
 class Hint:
     stage: Stage
-    item_id: str                # на какой пункт чек-листа нацелена
-    level: int                  # 1..3 (L1 наводящая → L3 прямая)
+    item_id: str                # which checklist item it targets
+    level: int                  # 1..3 (L1 nudge → L3 direct)
     text: str
 
 @dataclass
@@ -154,7 +154,7 @@ class Step:
     idx: int
     stage: Stage
     action: Action
-    result: str                 # что вернула среда (stdout / ошибка / метрика)
+    result: str                 # what the env returned (stdout / error / metric)
     val_score: Optional[float]
     tokens_used: int
     hints: list[Hint] = field(default_factory=list)
@@ -162,12 +162,12 @@ class Step:
 @dataclass
 class Observation:
     task: Task
-    stage: Stage                # текущая стадия агента
+    stage: Stage                # the agent's current stage
     history: list[Step]
     last_result: Optional[str]
     val_score: Optional[float]
     tokens_left: int
-    hints: list[Hint] = field(default_factory=list)   # подсказки этого хода
+    hints: list[Hint] = field(default_factory=list)   # hints for this turn
 
 @dataclass
 class EpisodeResult:
@@ -176,18 +176,18 @@ class EpisodeResult:
     seed: int
     steps: list[Step]
     final_test_score: Optional[float]
-    checklist_coverage: float   # 0..1, заполняет Coach
+    checklist_coverage: float   # 0..1, filled in by the Coach
     total_tokens: int
     config: dict = field(default_factory=dict)
 ```
 
-Ключевые сигнатуры модулей:
+Key module signatures:
 
 ```python
 # env/gym.py
 class Env:
     def reset(self, task: Task) -> Observation: ...
-    def step(self, action: Action) -> Observation: ...   # двигает состояние, дёргает Coach
+    def step(self, action: Action) -> Observation: ...   # advances state, calls the Coach
     def result(self) -> EpisodeResult: ...
 
 # agent/base.py
@@ -197,94 +197,94 @@ class Agent:
 # coach/coach.py
 class Coach:
     def assess(self, obs: Observation) -> tuple[float, list[Hint]]:
-        """Возвращает текущее покрытие чек-листа (0..1) и подсказки на этот ход."""
+        """Returns the current checklist coverage (0..1) and the hints for this turn."""
 
 # coach/grader.py
-def score_submission(task: Task, predictions) -> float: ...   # считает метрику на y_test
+def score_submission(task: Task, predictions) -> float: ...   # computes the metric on y_test
 ```
 
-Глю-точки: `Observation` (Env→Agent, читает Coach), `Hint` (Coach→Env→Agent), `EpisodeResult` (всё → dashboard + runner).
+Glue points: `Observation` (Env→Agent, read by the Coach), `Hint` (Coach→Env→Agent), `EpisodeResult` (everything → dashboard + runner).
 
 ---
 
-**Ваня — начальника**
-Ваня ведёт `agent/` + `env/` и владеет `core/`. Остальные трое — независимые папки.
+**Vanya — Agent + Env** (`agent/`, `env/`)
+Vanya leads `agent/` + `env/` and owns `core/`. The other three have independent folders.
 
-**Егор — Coach** (`coach/`)
-Пишет скрытый чек-лист из 5 стадий (каждая — набор пунктов), детекторы, которые по `Observation` понимают, какие пункты агент закрыл, лестницу подсказок L1–L3 на каждый пункт с политикой выдачи (только непройденные, эскалация если топчется), и метрики покрытия + статистику по подсказкам. Грейдер (`score_submission`) тоже здесь.
-*Мокает: `Observation` и пара фейковых траекторий — реальная среда не нужна.*
+**Egor — Coach** (`coach/`) ![Team-lead](https://img.shields.io/badge/Team--lead-blue)
+Writes the hidden 5-stage checklist (each stage is a set of items); detectors that use the `Observation` to determine which items the agent has completed; an L1–L3 hint ladder for each item with a delivery policy (only uncompleted items, escalate if the agent is stuck); and coverage metrics + hint statistics. The grader (`score_submission`) lives here too.
+*Mocks: `Observation` and a couple of fake trajectories — no real environment needed.*
 
-**Амели — Interface** (`dashboard/`)
-Дашборд (Streamlit поверх `EpisodeResult.json`): список прогонов, таймлайн действий агента (стадия → action → результат хода), прогресс по 5 стадиям с выданными подсказками, графики токенов/скора по шагам, сравнение двух прогонов (baseline vs scaffold).
-*Мокает: один-два примера `EpisodeResult.json` руками — работает полностью автономно, без чужого кода.*
+**Amelie — Interface** (`dashboard/`)
+Dashboard (Streamlit on top of `EpisodeResult.json`): list of runs, timeline of the agent's actions (stage → action → turn result), progress across the 5 stages with the hints given, token/score charts per step, comparison of two runs (baseline vs scaffold).
+*Mocks: one or two hand-written `EpisodeResult.json` examples — works fully standalone, without anyone else's code.*
 
-**Софа — Runner + датасеты** (`tasks/`, `runner/`, `reports/`)
-2–3 простых табличных датасета (train + спрятанный test + функция метрики + `Task`-спека) с защитой от утечки `y_test`; раннер, который фиксирует LLM и датасет и гоняет эксперимент на N сидах через yaml-конфиг; агрегатор (среднее ± SE, таблица baseline vs scaffold) с выгрузкой в `reports/`.
-*Мокает: фейковый env, возвращающий случайный скор, пока реальный не готов.*
-
----
-
-## Порядок работ
-
-1. **Нулевой день (Ваня, ~час):** заморозить `core/types.py`. Все импортируют, остальное мокают.
-2. **Тонкий сквозной слайс (вместе, пара дней):** 1 датасет, baseline-агент, тупой Coach без подсказок, env крутится, runner выдаёт `EpisodeResult`, dashboard его показывает. Цель — состыковать все модули один раз и выловить косяки интерфейсов.
-3. **Параллель:** каждый допиливает свою папку против контрактов.
-4. **Эксперимент (вместе):** baseline vs scaffold + ablation по слоям, ≥3 сида, среднее ± SE → `reports/`.
+**Sofia — Runner + datasets** (`tasks/`, `runner/`, `reports/`)
+2–3 simple tabular datasets (train + hidden test + metric function + `Task` spec) with protection against `y_test` leaks; a runner that fixes the LLM and dataset and runs the experiment over N seeds via a YAML config; an aggregator (mean ± SE, baseline vs scaffold table) that exports to `reports/`.
+*Mocks: a fake env that returns a random score until the real one is ready.*
 
 ---
 
-## Оценка
+## Work plan
 
-- **Outcome:** скор на held-out тесте; доля задач с ≥X% улучшения над фикс. бейзлайном.
-- **Process:** покрытие чек-листа (сколько шагов агент закрыл сам), сколько и какого уровня подсказок ушло.
-- **Efficiency:** токены / стоимость до заданного скора; скор при фиксированном бюджете.
-- **Статистика:** ≥3 сида на конфигурацию (агенты высоковариативны), среднее ± SE.
-- **Анти-чит:** прирост от качества модели, а не от утечки/оверфита на валидации.
-
----
-
-## Стек / конвенции
-
-- Python 3.11+, type hints, `dataclasses`. Без тяжёлых фреймворков в v1.
-- Линт/формат: `ruff` + `black`.
-- LLM-клиент — model-neutral (OpenAI-совместимый API), модель задаётся в конфиге.
-- Песочница: исполнение кода агента в изолированном процессе/контейнере.
+1. **Day zero (Vanya, ~1 hour):** freeze `core/types.py`. Everyone imports it and mocks the rest.
+2. **Thin end-to-end slice (together, a couple of days):** 1 dataset, baseline agent, a dumb Coach without hints, env runs, runner produces an `EpisodeResult`, dashboard displays it. The goal is to wire all modules together once and catch interface bugs.
+3. **In parallel:** everyone polishes their own folder against the contracts.
+4. **Experiment (together):** baseline vs scaffold + ablation by layer, ≥3 seeds, mean ± SE → `reports/`.
 
 ---
 
-## Инструкция для AI-агента
+## Evaluation
 
-Если этот файл отдали тебе, чтобы помочь одному из участников:
-
-1. **Определи зону.** Спроси (или выведи из задачи), в какой папке работаешь: `coach/`, `dashboard/` или `tasks/`+`runner/`. Не лезь в чужие папки.
-2. **Кодь против `core/`.** Импортируй типы из `core/types.py`, не меняй их поля. Если поля реально не хватает — не правь молча, а вынеси это как вопрос для синка по контрактам.
-3. **Мокай чужое.** Тебе не нужен чужой готовый код: Coach мокает `Observation`, Interface — `EpisodeResult.json`, Runner — фейковый env. Это и есть смысл параллельной работы.
-4. **Держи v1 простым.** Пять стадий, один цикл, простые детекторы (правила по коду/истории; LLM-judge — потом). Не добавляй стадии и фичи, которых нет в этом файле, без явной просьбы.
-5. **Не нарушай правила данных.** Никогда не давай агенту доступ к `y_test` или коду грейдера. Любой код, читающий тестовые лейблы, — только внутри `coach/grader.py`.
-6. **Сверяйся с этим README** как с источником правды по архитектуре, контрактам и границам ответственности.
+- **Outcome:** score on the held-out test; share of tasks with ≥X% improvement over a fixed baseline.
+- **Process:** checklist coverage (how many steps the agent completed on its own), how many hints were given and at what level.
+- **Efficiency:** tokens / cost to reach a given score; score at a fixed budget.
+- **Statistics:** ≥3 seeds per configuration (agents are highly variable), mean ± SE.
+- **Anti-cheating:** gains must come from model quality, not from leaks or overfitting to validation.
 
 ---
 
-## Запуск через Docker (просто прогнать всё)
+## Stack / conventions
 
-Один контейнер: Streamlit-дашборд + раннер + агент.
+- Python 3.11+, type hints, `dataclasses`. No heavy frameworks in v1.
+- Lint/format: `ruff` + `black`.
+- LLM client — model-neutral (OpenAI-compatible API), the model is set in the config.
+- Sandbox: the agent's code runs in an isolated process/container.
 
-1. Прописать ключ OpenAI в `.env` в корне репо (см. `SECRETS.md`):
+---
+
+## Instructions for AI agents
+
+If this file was given to you so you can help one of the team members:
+
+1. **Identify your area.** Ask (or infer from the task) which folder you are working in: `coach/`, `dashboard/`, or `tasks/`+`runner/`. Do not touch other people's folders.
+2. **Code against `core/`.** Import types from `core/types.py` and do not change their fields. If a field is genuinely missing — don't edit it silently; raise it as a question for the contracts sync.
+3. **Mock everything else.** You don't need anyone else's finished code: the Coach mocks `Observation`, the Interface mocks `EpisodeResult.json`, the Runner mocks a fake env. That is the whole point of working in parallel.
+4. **Keep v1 simple.** Five stages, one loop, simple detectors (rules over code/history; LLM-judge comes later). Don't add stages or features that aren't in this file unless explicitly asked.
+5. **Don't break the data rules.** Never give the agent access to `y_test` or the grader code. Any code that reads test labels lives only inside `coach/grader.py`.
+6. **Treat this README** as the source of truth for architecture, contracts, and areas of responsibility.
+
+---
+
+## Running with Docker (just run everything)
+
+One container: Streamlit dashboard + runner + agent.
+
+1. Put your OpenAI key in `.env` at the repo root (see `SECRETS.md`):
    ```
-   OPENAI_API_KEY=sk-...        # твой ключ; sk-REPLACE-ME → включится MockLLM
+   OPENAI_API_KEY=sk-...        # your key; sk-REPLACE-ME → MockLLM is used
    OPENAI_MODEL=gpt-5-mini
    MLGYM_LLM=openai             # mock | openai
    ```
-   `.env` в гит не коммитится и НЕ попадает в образ — ключ прокидывается в контейнер
-   в рантайме через `env_file` в `docker-compose.yml`.
+   `.env` is not committed to git and does NOT end up in the image — the key is passed
+   into the container at runtime via `env_file` in `docker-compose.yml`.
 
-2. Поднять:
+2. Start it:
    ```bash
    docker compose up --build
    ```
 
-3. Открыть дашборд: **http://localhost:8501**
+3. Open the dashboard: **http://localhost:8501**
 
-Данные переживают пересборку образа — `runs/` и `tasks/uploads/` смонтированы как
-volume. Песочница исполнения кода в этом варианте НЕ изолирована (агент пишет наш же
-baseline-код); строгая изоляция — задача на потом, когда будет исполняться чужой код.
+Data survives image rebuilds — `runs/` and `tasks/uploads/` are mounted as
+volumes. The code execution sandbox in this setup is NOT isolated (the agent writes our own
+baseline code); strict isolation is a task for later, once third-party code is being executed.
