@@ -6,6 +6,23 @@ This file is the **full project context**. You can hand it as-is to any AI agent
 
 ---
 
+**Vanya — Agent + Env** (`agent/`, `env/`)
+Vanya leads `agent/` + `env/` and owns `core/`. The other three have independent folders.
+
+**Egor — Coach** (`coach/`) ![Team-lead](https://img.shields.io/badge/Team--lead-blue)
+Writes the hidden 5-stage checklist (each stage is a set of items); detectors that use the `Observation` to determine which items the agent has completed; an L1–L3 hint ladder for each item with a delivery policy (only uncompleted items, escalate if the agent is stuck); and coverage metrics + hint statistics. The grader (`score_submission`) lives here too.
+*Mocks: `Observation` and a couple of fake trajectories — no real environment needed.*
+
+**Amelie — Interface** (`dashboard/`)
+Dashboard (Streamlit on top of `EpisodeResult.json`): list of runs, timeline of the agent's actions (stage → action → turn result), progress across the 5 stages with the hints given, token/score charts per step, comparison of two runs (baseline vs scaffold).
+*Mocks: one or two hand-written `EpisodeResult.json` examples — works fully standalone, without anyone else's code.*
+
+**Sofia — Runner + datasets** (`tasks/`, `runner/`, `reports/`)
+2–3 simple tabular datasets (train + hidden test + metric function + `Task` spec) with protection against `y_test` leaks; a runner that fixes the LLM and dataset and runs the experiment over N seeds via a YAML config; an aggregator (mean ± SE, baseline vs scaffold table) that exports to `reports/`.
+*Mocks: a fake env that returns a random score until the real one is ready.*
+
+---
+
 ## Idea
 
 We are testing one hypothesis: **how much does a structured pipeline + guiding hints improve an LLM agent on classic tabular ML tasks** compared to a bare LLM.
@@ -204,23 +221,6 @@ def score_submission(task: Task, predictions) -> float: ...   # computes the met
 ```
 
 Glue points: `Observation` (Env→Agent, read by the Coach), `Hint` (Coach→Env→Agent), `EpisodeResult` (everything → dashboard + runner).
-
----
-
-**Vanya — Agent + Env** (`agent/`, `env/`)
-Vanya leads `agent/` + `env/` and owns `core/`. The other three have independent folders.
-
-**Egor — Coach** (`coach/`) ![Team-lead](https://img.shields.io/badge/Team--lead-blue)
-Writes the hidden 5-stage checklist (each stage is a set of items); detectors that use the `Observation` to determine which items the agent has completed; an L1–L3 hint ladder for each item with a delivery policy (only uncompleted items, escalate if the agent is stuck); and coverage metrics + hint statistics. The grader (`score_submission`) lives here too.
-*Mocks: `Observation` and a couple of fake trajectories — no real environment needed.*
-
-**Amelie — Interface** (`dashboard/`)
-Dashboard (Streamlit on top of `EpisodeResult.json`): list of runs, timeline of the agent's actions (stage → action → turn result), progress across the 5 stages with the hints given, token/score charts per step, comparison of two runs (baseline vs scaffold).
-*Mocks: one or two hand-written `EpisodeResult.json` examples — works fully standalone, without anyone else's code.*
-
-**Sofia — Runner + datasets** (`tasks/`, `runner/`, `reports/`)
-2–3 simple tabular datasets (train + hidden test + metric function + `Task` spec) with protection against `y_test` leaks; a runner that fixes the LLM and dataset and runs the experiment over N seeds via a YAML config; an aggregator (mean ± SE, baseline vs scaffold table) that exports to `reports/`.
-*Mocks: a fake env that returns a random score until the real one is ready.*
 
 ---
 
